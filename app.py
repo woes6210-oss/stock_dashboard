@@ -181,7 +181,25 @@ def auth_login():
 def auth_callback():
     token = oauth.google.authorize_access_token()
     user = token.get("userinfo") or oauth.google.parse_id_token(token)
-    session["user_sub"] = user["sub"]
+    google_sub = user["sub"]
+    # merge existing guest config into google config
+    guest_key = request.headers.get("X-Client-Id") or request.remote_addr or "127.0.0.1"
+    configs = load_all_configs()
+    guest_cfg = configs.pop(guest_key, {})
+    google_key = "google_" + google_sub
+    if guest_cfg:
+        google_cfg = configs.get(google_key, {})
+        for k, v in guest_cfg.items():
+            if k.endswith("_list") or k in ("sidebar_width", "refresh_interval", "chart_period", "chart_interval"):
+                if k.endswith("_list"):
+                    existing = google_cfg.get(k, [])
+                    merged = list(dict.fromkeys(existing + v))
+                    google_cfg[k] = merged
+                else:
+                    google_cfg[k] = v
+        configs[google_key] = google_cfg
+        save_all_configs(configs)
+    session["user_sub"] = google_sub
     session["user_name"] = user.get("name", "")
     session["user_email"] = user.get("email", "")
     return redirect(url_for("index"))
