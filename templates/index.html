@@ -138,21 +138,21 @@ input::placeholder{color:#4a5568}
   <hr>
 
   <div id="analysisSection" style="display:none">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
       <div>
-        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">個股雷達</div>
+        <div style="font-size:10px;text-align:center;color:#a0aec0;margin-bottom:2px">個股雷達</div>
         <canvas id="radarChart"></canvas>
       </div>
       <div>
-        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">同業平均</div>
+        <div style="font-size:10px;text-align:center;color:#a0aec0;margin-bottom:2px">同業平均</div>
         <canvas id="industryRadar"></canvas>
       </div>
       <div>
-        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">本益比 (PE)</div>
+        <div style="font-size:10px;text-align:center;color:#a0aec0;margin-bottom:2px">本益比 (PE)</div>
         <canvas id="peChart"></canvas>
       </div>
       <div>
-        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">每股盈餘 (EPS)</div>
+        <div style="font-size:10px;text-align:center;color:#a0aec0;margin-bottom:2px">每股盈餘 (TTM)</div>
         <canvas id="epsChart"></canvas>
       </div>
     </div>
@@ -546,7 +546,12 @@ async function loadIndices(){
    STOCK ANALYSIS (RADAR + BAR)
 ========================= */
 
-function renderRadar(canvasId, data, label, color){
+var RADAR_COLORS = [
+  {bg:"rgba(0,212,255,0.25)", border:"#00d4ff", point:"#00d4ff"},
+  {bg:"rgba(255,152,0,0.25)", border:"#ff9800", point:"#ff9800"},
+];
+
+function renderRadar(canvasId, data, label, colorIdx){
   var canvas = document.getElementById(canvasId);
   if(!canvas) return null;
   if(canvas._chart) canvas._chart.destroy();
@@ -557,44 +562,68 @@ function renderRadar(canvasId, data, label, color){
     labels.push(data[k].label);
     values.push(Math.max(0, (data[k].raw / data[k].max) * 100));
   });
+  var c = RADAR_COLORS[colorIdx || 0];
   canvas._chart = new Chart(canvas, {
     type:"radar",
     data:{
       labels:labels,
-      datasets:[{label:label, data:values, backgroundColor:color+"33", borderColor:color, pointBackgroundColor:color, borderWidth:1}]
+      datasets:[{
+        label:label, data:values,
+        backgroundColor:c.bg,
+        borderColor:c.border,
+        pointBackgroundColor:c.point,
+        pointBorderColor:"#0b0f14",
+        pointBorderWidth:2,
+        pointRadius:3,
+        pointHoverRadius:5,
+        borderWidth:2,
+      }]
     },
     options:{
       responsive:true, maintainAspectRatio:true, aspectRatio:1,
       plugins:{legend:{display:false}},
       scales:{
-        r:{min:0, max:100, ticks:{display:false, stepSize:25}, grid:{color:"#2a3a4a"}, angleLines:{color:"#2a3a4a"}, pointLabels:{color:"#a0aec0", font:{size:8}}}
+        r:{
+          min:0, max:100,
+          ticks:{display:false, stepSize:25, backdropColor:"transparent"},
+          grid:{color:"#2a3a4a", circular:true},
+          angleLines:{color:"#1c2a3a"},
+          pointLabels:{
+            color:"#b0c4de",
+            font:{size:10, weight:"bold"},
+          }
+        }
       }
     }
   });
   return canvas._chart;
 }
 
+function _hasVal(v){ return v != null && v !== undefined && v !== 0 && !isNaN(v); }
+
 function renderPeChart(pe, avgPe){
   var canvas = document.getElementById("peChart");
   if(!canvas) return;
   if(canvas._chart) canvas._chart.destroy();
+  var vals = [_hasVal(pe) ? pe : null];
+  var avgVals = [_hasVal(avgPe) ? avgPe : null];
   canvas._chart = new Chart(canvas, {
     type:"bar",
     data:{
       labels:["本益比"],
       datasets:[
-        {label:"個股", data:[pe != null ? pe : null], backgroundColor:"#00d4ff88", borderColor:"#00d4ff", borderWidth:1},
-        {label:"同業平均", data:[avgPe != null ? avgPe : null], backgroundColor:"#ff980088", borderColor:"#ff9800", borderWidth:1}
+        {label:"個股", data:vals, backgroundColor:"#00d4ffaa", borderColor:"#00d4ff", borderWidth:2, borderRadius:3},
+        {label:"同業平均", data:avgVals, backgroundColor:"#ff9800aa", borderColor:"#ff9800", borderWidth:2, borderRadius:3}
       ]
     },
     options:{
       responsive:true, maintainAspectRatio:true, aspectRatio:1,
       plugins:{
-        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:8, font:{size:8}}}
+        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:10, font:{size:9, weight:"bold"}}}
       },
       scales:{
-        x:{ticks:{color:"#a0aec0", font:{size:8}}},
-        y:{ticks:{color:"#a0aec0", font:{size:8}}, grid:{color:"#2a3a4a"}}
+        x:{ticks:{color:"#a0aec0", font:{size:9}}},
+        y:{ticks:{color:"#a0aec0", font:{size:9}}, grid:{color:"#1c2a3a"}}
       }
     }
   });
@@ -604,23 +633,25 @@ function renderEpsChart(eps, avgEps){
   var canvas = document.getElementById("epsChart");
   if(!canvas) return;
   if(canvas._chart) canvas._chart.destroy();
+  var vals = [_hasVal(eps) ? eps : null];
+  var avgVals = [_hasVal(avgEps) ? avgEps : null];
   canvas._chart = new Chart(canvas, {
     type:"bar",
     data:{
-      labels:["EPS"],
+      labels:["每股盈餘 (TTM)"],
       datasets:[
-        {label:"個股", data:[eps != null ? eps : null], backgroundColor:"#00d4ff88", borderColor:"#00d4ff", borderWidth:1},
-        {label:"同業平均", data:[avgEps != null ? avgEps : null], backgroundColor:"#ff980088", borderColor:"#ff9800", borderWidth:1}
+        {label:"個股", data:vals, backgroundColor:"#00d4ffaa", borderColor:"#00d4ff", borderWidth:2, borderRadius:3},
+        {label:"同業平均", data:avgVals, backgroundColor:"#ff9800aa", borderColor:"#ff9800", borderWidth:2, borderRadius:3}
       ]
     },
     options:{
       responsive:true, maintainAspectRatio:true, aspectRatio:1,
       plugins:{
-        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:8, font:{size:8}}}
+        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:10, font:{size:9, weight:"bold"}}}
       },
       scales:{
-        x:{ticks:{color:"#a0aec0", font:{size:8}}},
-        y:{ticks:{color:"#a0aec0", font:{size:8}}, grid:{color:"#2a3a4a"}}
+        x:{ticks:{color:"#a0aec0", font:{size:9}}},
+        y:{ticks:{color:"#a0aec0", font:{size:9}}, grid:{color:"#1c2a3a"}}
       }
     }
   });
@@ -637,7 +668,7 @@ async function loadAnalysis(sym){
       document.getElementById("analysisSection").style.display = "none";
       return;
     }
-    renderRadar("radarChart", stockData.details, sym, "#00d4ff");
+    renderRadar("radarChart", stockData.details, sym, 0);
 
     // Compute industry average from other watchlist stocks
     var avgDetails = {};
@@ -652,9 +683,9 @@ async function loadAnalysis(sym){
     });
     if(count > 0){
       Object.keys(avgDetails).forEach(function(k){ avgDetails[k].raw = avgDetails[k].raw / count; });
-      renderRadar("industryRadar", avgDetails, "同業平均", "#ff9800");
+      renderRadar("industryRadar", avgDetails, "同業平均", 1);
     } else {
-      renderRadar("industryRadar", null, "", "#ff9800");
+      renderRadar("industryRadar", null, "", 1);
     }
   } catch(e){
     document.getElementById("analysisSection").style.display = "none";
