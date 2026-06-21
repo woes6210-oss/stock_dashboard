@@ -119,7 +119,7 @@ def compute_weather(symbol, market="us"):
         ticker = yf.Ticker(yf_sym)
         hist = ticker.history(period="2mo", interval="1d")
         if hist.empty or len(hist) < 15:
-            return "☁️"
+            return "—"
 
         close = hist["Close"].tolist()
         volume = hist["Volume"].tolist()
@@ -177,7 +177,7 @@ def compute_weather(symbol, market="us"):
         if score <= -25: return "🌧️"
         return "☁️"
     except Exception:
-        return "☁️"
+        return "—"
 
 
 def compute_weather_detail(symbol, market="us"):
@@ -187,7 +187,7 @@ def compute_weather_detail(symbol, market="us"):
         ticker = yf.Ticker(yf_sym)
         hist = ticker.history(period="2mo", interval="1d")
         if hist.empty or len(hist) < 15:
-            return {"weather": "☁️", "score": 0, "details": {}}
+            return {"weather": "—", "score": 0, "details": {}}
 
         close = hist["Close"].tolist()
         volume = hist["Volume"].tolist()
@@ -257,7 +257,7 @@ def compute_weather_detail(symbol, market="us"):
 
         return {"weather": weather, "score": total, "details": details}
     except Exception:
-        return {"weather": "☁️", "score": 0, "details": {}}
+        return {"weather": "—", "score": 0, "details": {}}
 
 
 # simple in-memory cache keyed by request path + query
