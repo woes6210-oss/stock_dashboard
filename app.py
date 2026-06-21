@@ -361,7 +361,7 @@ US_INDICES = [
     ("^SOX", "SOX"), ("^VIX", "VIX"), ("^RUT", "RUSSELL"),
 ]
 TW_INDICES = [
-    ("^TWII", "加權指數"), ("^TWO", "櫃買指數"),
+    ("^TWII", "加權指數"), ("0050.TW", "台灣50"),
 ]
 INDICES_PERIOD_MAP = {"1d": ("1d", "5m"), "5d": ("5d", "5m"), "1mo": ("1mo", "1d"), "3mo": ("3mo", "1d")}
 
