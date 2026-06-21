@@ -5,7 +5,9 @@
 
 import json
 import os
-import urllib.request
+import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -61,9 +63,9 @@ def _fetch_twse_pe():
         return _TWSE_PE_CACHE["data"]
     try:
         url = "https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        resp = requests.get(url, timeout=15, verify=False)
+        resp.raise_for_status()
+        data = resp.json()
         result = {}
         for item in data:
             code = item.get("Code", "")
@@ -286,6 +288,25 @@ def api_weather():
     return jsonify(results)
 
 
+def _get_current_price(symbol):
+    try:
+        t = yf.Ticker(symbol)
+        fi = t.fast_info
+        if fi.last_price:
+            return fi.last_price
+    except Exception:
+        pass
+    try:
+        return t.info.get("currentPrice") or t.info.get("regularMarketPrice")
+    except Exception:
+        return None
+
+def _calc_eps_from_price_pe(price, pe):
+    if price and pe and pe > 0:
+        return round(price / pe, 2)
+    return None
+
+
 @app.route("/api/stock-fundamentals")
 @cached(300)
 def api_stock_fundamentals():
@@ -301,13 +322,19 @@ def api_stock_fundamentals():
             pb = entry.get("pb")
             dy = entry.get("dividend_yield")
             name = entry.get("name", "")
-            return jsonify({"pe": pe, "eps": None, "pb": pb, "dividend_yield": dy, "name": name, "industry": "台股"})
-        else:
-            yf_sym = symbol
+            yf_sym = symbol + ".TW"
             info = yf.Ticker(yf_sym).info
+            price = _get_current_price(yf_sym)
+            eps = _calc_eps_from_price_pe(price, pe)
+            return jsonify({"pe": pe, "eps": eps, "pb": pb, "dividend_yield": dy, "name": name, "industry": "台股"})
+        else:
+            info = yf.Ticker(symbol).info
+            price = _get_current_price(symbol)
+            tp = info.get("trailingPE")
+            eps = _calc_eps_from_price_pe(price, tp)
             return jsonify({
-                "pe": info.get("trailingPE") or info.get("forwardPE"),
-                "eps": info.get("trailingEps") or info.get("epsTrailingTwelveMonths"),
+                "pe": tp,
+                "eps": eps,
                 "industry": info.get("industry") or info.get("sector", "Unknown"),
             })
     except Exception as e:
@@ -326,13 +353,19 @@ def api_portfolio_fundamentals():
             if market == "tw":
                 twse = _fetch_twse_pe()
                 entry = twse.get(sym, {})
-                results[sym] = {"pe": entry.get("pe"), "eps": None, "pb": entry.get("pb")}
+                pe = entry.get("pe")
+                pb = entry.get("pb")
+                yf_sym = sym + ".TW"
+                info = yf.Ticker(yf_sym).info
+                price = _get_current_price(yf_sym)
+                eps = _calc_eps_from_price_pe(price, pe)
+                results[sym] = {"pe": pe, "eps": eps, "pb": pb}
             else:
                 info = yf.Ticker(sym).info
-                results[sym] = {
-                    "pe": info.get("trailingPE") or info.get("forwardPE"),
-                    "eps": info.get("trailingEps") or info.get("epsTrailingTwelveMonths"),
-                }
+                price = _get_current_price(sym)
+                tp = info.get("trailingPE")
+                eps = _calc_eps_from_price_pe(price, tp)
+                results[sym] = {"pe": tp, "eps": eps}
         except Exception:
             results[sym] = {"pe": None, "eps": None}
     return jsonify(results)
@@ -384,21 +417,31 @@ def get_client_ip():
     return request.remote_addr or "127.0.0.1"
 
 
-# ── User Config ────────────────────────────────────────
+# ── User Config (in-memory with optional disk fallback) ──
+
+_configs = {}
 
 def load_all_configs():
-    if not Path(CONFIG_FILE).exists():
-        return {}
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    global _configs
+    if _configs:
+        return _configs
+    if Path(CONFIG_FILE).exists():
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                _configs = json.load(f)
+        except Exception:
+            _configs = {}
+    return _configs
 
 
 def save_all_configs(configs):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(configs, f, ensure_ascii=False, indent=2)
+    global _configs
+    _configs = configs
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(configs, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 
 def get_user_config(market="us"):

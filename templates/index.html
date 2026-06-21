@@ -69,10 +69,7 @@ input::placeholder{color:#4a5568}
 .indices-bar .idx-item .idx-label{color:#a0aec0}
 .indices-bar .idx-item .idx-val{font-weight:bold;font-size:12px}
 .indices-bar .idx-item .idx-chg{font-size:10px}
-.chart-sm{height:140px;margin-bottom:6px}
-.radar-row{display:flex;gap:6px;margin-bottom:8px}
-.radar-row canvas{flex:1;height:120px!important;width:50%!important}
-.bar-chart-sm{height:120px;margin-bottom:8px}
+
 .notif{position:fixed;top:60px;right:16px;z-index:999;display:flex;flex-direction:column;gap:8px}
 .notif-item{padding:10px 14px;border-radius:4px;font-size:13px;animation:fadeIn .3s;max-width:320px}
 .notif-item.info{background:#1a3a5c;border:1px solid #00d4ff}
@@ -141,15 +138,24 @@ input::placeholder{color:#4a5568}
   <hr>
 
   <div id="analysisSection" style="display:none">
-    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-      <span id="indivRadarTitle">個股雷達圖</span>
-      <span id="indusRadarTitle">同業平均</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px">
+      <div>
+        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">個股雷達</div>
+        <canvas id="radarChart"></canvas>
+      </div>
+      <div>
+        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">同業平均</div>
+        <canvas id="industryRadar"></canvas>
+      </div>
+      <div>
+        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">本益比 (PE)</div>
+        <canvas id="peChart"></canvas>
+      </div>
+      <div>
+        <div style="font-size:9px;text-align:center;color:#a0aec0;margin-bottom:2px">每股盈餘 (EPS)</div>
+        <canvas id="epsChart"></canvas>
+      </div>
     </div>
-    <div class="radar-row">
-      <canvas id="radarChart"></canvas>
-      <canvas id="industryRadar"></canvas>
-    </div>
-    <div class="bar-chart-sm"><canvas id="fundamentalsChart"></canvas></div>
   </div>
 
   <hr>
@@ -258,6 +264,14 @@ function notify(msg, type="info"){
    WATCHLIST
 ========================= */
 
+function saveWatchlistToLocal(){
+  var syms = [];
+  document.querySelectorAll("#tbl tr[data-sym]").forEach(function(tr){
+    syms.push(tr.getAttribute("data-sym"));
+  });
+  try { localStorage.setItem("wl_" + currentMarket, JSON.stringify(syms)); } catch(e){}
+}
+
 async function addSymbol(){
   const sym = document.getElementById("symbolInput").value.trim().toUpperCase();
   if(!sym) return;
@@ -278,6 +292,7 @@ async function addSymbol(){
       tr.innerHTML = `<td></td><td colspan="10" style="color:#4a5568;text-align:center">Loading ${sym}...</td>`;
       tbody.prepend(tr);
     }
+    saveWatchlistToLocal();
     loadQuotes();
   }).catch(() => {
     input.disabled = false;
@@ -288,6 +303,7 @@ async function deleteSymbol(sym){
   try { await api(`/api/watchlist/${sym}?market=${currentMarket}`,{method:"DELETE"}); } catch(e){}
   var row = document.querySelector(`#tbl tr[data-sym="${sym}"]`);
   if(row) row.remove();
+  saveWatchlistToLocal();
   if(selectedSymbol === sym) selectedSymbol = null;
 }
 
@@ -530,22 +546,16 @@ async function loadIndices(){
    STOCK ANALYSIS (RADAR + BAR)
 ========================= */
 
-var _radarChart = null;
-var _industryRadarChart = null;
-var _fundamentalsChart = null;
-
 function renderRadar(canvasId, data, label, color){
   var canvas = document.getElementById(canvasId);
   if(!canvas) return null;
   if(canvas._chart) canvas._chart.destroy();
   var labels = [];
   var values = [];
-  var maxVals = [];
   if(!data || Object.keys(data).length === 0) return null;
   Object.keys(data).forEach(function(k){
     labels.push(data[k].label);
     values.push(Math.max(0, (data[k].raw / data[k].max) * 100));
-    maxVals.push(100);
   });
   canvas._chart = new Chart(canvas, {
     type:"radar",
@@ -554,39 +564,63 @@ function renderRadar(canvasId, data, label, color){
       datasets:[{label:label, data:values, backgroundColor:color+"33", borderColor:color, pointBackgroundColor:color, borderWidth:1}]
     },
     options:{
-      responsive:true, maintainAspectRatio:false,
+      responsive:true, maintainAspectRatio:true, aspectRatio:1,
       plugins:{legend:{display:false}},
       scales:{
-        r:{min:0, max:100, ticks:{display:false, stepSize:25}, grid:{color:"#2a3a4a"}, angleLines:{color:"#2a3a4a"}, pointLabels:{color:"#a0aec0", font:{size:9}}}
+        r:{min:0, max:100, ticks:{display:false, stepSize:25}, grid:{color:"#2a3a4a"}, angleLines:{color:"#2a3a4a"}, pointLabels:{color:"#a0aec0", font:{size:8}}}
       }
     }
   });
   return canvas._chart;
 }
 
-function renderBarChart(pe, avgPe, eps, avgEps){
-  var canvas = document.getElementById("fundamentalsChart");
+function renderPeChart(pe, avgPe){
+  var canvas = document.getElementById("peChart");
   if(!canvas) return;
   if(canvas._chart) canvas._chart.destroy();
-  var peOk = pe != null && pe !== undefined && pe !== 0;
-  var epsOk = eps != null && eps !== undefined && eps !== 0;
   canvas._chart = new Chart(canvas, {
     type:"bar",
     data:{
-      labels:["本益比 (P/E)", "每股盈餘 (EPS)"],
+      labels:["本益比"],
       datasets:[
-        {label:"個股", data:[peOk ? pe : null, epsOk ? eps : null], backgroundColor:"#00d4ff88", borderColor:"#00d4ff", borderWidth:1},
-        {label:"同業平均", data:[avgPe != null ? avgPe : null, avgEps != null ? avgEps : null], backgroundColor:"#ff980088", borderColor:"#ff9800", borderWidth:1}
+        {label:"個股", data:[pe != null ? pe : null], backgroundColor:"#00d4ff88", borderColor:"#00d4ff", borderWidth:1},
+        {label:"同業平均", data:[avgPe != null ? avgPe : null], backgroundColor:"#ff980088", borderColor:"#ff9800", borderWidth:1}
       ]
     },
     options:{
-      responsive:true, maintainAspectRatio:false,
+      responsive:true, maintainAspectRatio:true, aspectRatio:1,
       plugins:{
-        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:10, font:{size:10}}}
+        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:8, font:{size:8}}}
       },
       scales:{
-        x:{ticks:{color:"#a0aec0", font:{size:9}}},
-        y:{ticks:{color:"#a0aec0", font:{size:9}}, grid:{color:"#2a3a4a"}}
+        x:{ticks:{color:"#a0aec0", font:{size:8}}},
+        y:{ticks:{color:"#a0aec0", font:{size:8}}, grid:{color:"#2a3a4a"}}
+      }
+    }
+  });
+}
+
+function renderEpsChart(eps, avgEps){
+  var canvas = document.getElementById("epsChart");
+  if(!canvas) return;
+  if(canvas._chart) canvas._chart.destroy();
+  canvas._chart = new Chart(canvas, {
+    type:"bar",
+    data:{
+      labels:["EPS"],
+      datasets:[
+        {label:"個股", data:[eps != null ? eps : null], backgroundColor:"#00d4ff88", borderColor:"#00d4ff", borderWidth:1},
+        {label:"同業平均", data:[avgEps != null ? avgEps : null], backgroundColor:"#ff980088", borderColor:"#ff9800", borderWidth:1}
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true, aspectRatio:1,
+      plugins:{
+        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:8, font:{size:8}}}
+      },
+      scales:{
+        x:{ticks:{color:"#a0aec0", font:{size:8}}},
+        y:{ticks:{color:"#a0aec0", font:{size:8}}, grid:{color:"#2a3a4a"}}
       }
     }
   });
@@ -603,7 +637,7 @@ async function loadAnalysis(sym){
       document.getElementById("analysisSection").style.display = "none";
       return;
     }
-    _radarChart = renderRadar("radarChart", stockData.details, sym, "#00d4ff");
+    renderRadar("radarChart", stockData.details, sym, "#00d4ff");
 
     // Compute industry average from other watchlist stocks
     var avgDetails = {};
@@ -618,9 +652,9 @@ async function loadAnalysis(sym){
     });
     if(count > 0){
       Object.keys(avgDetails).forEach(function(k){ avgDetails[k].raw = avgDetails[k].raw / count; });
-      _industryRadarChart = renderRadar("industryRadar", avgDetails, "同業平均", "#ff9800");
+      renderRadar("industryRadar", avgDetails, "同業平均", "#ff9800");
     } else {
-      _industryRadarChart = renderRadar("industryRadar", null, "", "#ff9800");
+      renderRadar("industryRadar", null, "", "#ff9800");
     }
   } catch(e){
     document.getElementById("analysisSection").style.display = "none";
@@ -643,7 +677,8 @@ async function loadAnalysis(sym){
       if(peVals.length) avgPe = peVals.reduce(function(a,b){return a+b;},0) / peVals.length;
       if(epsVals.length) avgEps = epsVals.reduce(function(a,b){return a+b;},0) / epsVals.length;
     } catch(e){}
-    renderBarChart(fdata.pe, avgPe, fdata.eps, avgEps);
+    renderPeChart(fdata.pe, avgPe);
+    renderEpsChart(fdata.eps, avgEps);
   } catch(e){}
 }
 
@@ -901,6 +936,25 @@ async function checkAuth(retries){
 }
 
 (async function(){
+  // Restore watchlist from localStorage if available
+  try {
+    var saved = localStorage.getItem("wl_" + currentMarket);
+    if(saved) {
+      var syms = JSON.parse(saved);
+      if(syms.length > 0) {
+        var sres = await api("/api/watchlist?market=" + currentMarket);
+        var serverList = await sres.json();
+        // If server has default list, restore from local
+        if(serverList.length === 8 && ["AAPL","MSFT","GOOGL","AMZN","NVDA","TSLA","META","AMD"].every(function(x){return serverList.indexOf(x)>=0;}) || currentMarket==="tw" && serverList.length === 10 && ["2330","2317","2454","2308","2412","2881","2303","2382","2357","3711"].every(function(x){return serverList.indexOf(x)>=0;})){
+          for(var s of syms) {
+            if(serverList.indexOf(s) < 0) {
+              try { await api("/api/watchlist/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol:s,market:currentMarket})}); } catch(e){}
+            }
+          }
+        }
+      }
+    }
+  } catch(e){}
   await loadUserConfig();
   loadQuotes();
   loadIndices();
@@ -918,7 +972,7 @@ document.getElementById("marketTabs").addEventListener("click", function(e){
   currentMarket = b.getAttribute("data-market");
   if(chart){ chart.destroy(); chart = null; }
   document.getElementById("analysisSection").style.display = "none";
-  [].forEach.call(document.querySelectorAll("#radarChart, #industryRadar, #fundamentalsChart"), function(c){
+  [].forEach.call(document.querySelectorAll("#radarChart, #industryRadar, #peChart, #epsChart"), function(c){
     if(c._chart){ c._chart.destroy(); c._chart = null; }
   });
   document.getElementById("chartTitle").textContent = "";
