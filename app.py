@@ -5,6 +5,7 @@
 
 import json
 import os
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -23,6 +24,15 @@ except ImportError:
     raise
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
+oauth = OAuth(app)
+oauth.register(
+    name="google",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+    client_kwargs={"scope": "openid email profile"},
+)
 
 # Startup env check – prints to gunicorn logs on Render
 _has_id = bool(os.environ.get("GOOGLE_CLIENT_ID"))
@@ -38,6 +48,43 @@ if not (_has_id and _has_secret):
     print(f"  GOOGLE_CLIENT_ID value:  {repr(os.environ.get('GOOGLE_CLIENT_ID', ''))}")
     print(f"  GOOGLE_CLIENT_SECRET len: {len(os.environ.get('GOOGLE_CLIENT_SECRET', ''))}")
     print("=" * 50)
+
+
+# ── TWSE OpenAPI (台股基本面) ───────────────────────────
+
+_TWSE_PE_CACHE = {"data": None, "ts": None}
+
+def _fetch_twse_pe():
+    """Fetch PE / PB / Dividend data from TWSE OpenAPI (cached 1 hour)."""
+    now = datetime.now()
+    if _TWSE_PE_CACHE["ts"] and (now - _TWSE_PE_CACHE["ts"]).total_seconds() < 3600:
+        return _TWSE_PE_CACHE["data"]
+    try:
+        url = "https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        result = {}
+        for item in data:
+            code = item.get("Code", "")
+            try:
+                pe = float(item["PEratio"]) if item.get("PEratio") else None
+            except (ValueError, TypeError):
+                pe = None
+            try:
+                pb = float(item["PBratio"]) if item.get("PBratio") else None
+            except (ValueError, TypeError):
+                pb = None
+            try:
+                dy = float(item["DividendYield"]) if item.get("DividendYield") else None
+            except (ValueError, TypeError):
+                dy = None
+            result[code] = {"code": code, "name": item.get("Name", ""), "pe": pe, "pb": pb, "dividend_yield": dy}
+        _TWSE_PE_CACHE["data"] = result
+        _TWSE_PE_CACHE["ts"] = now
+        return result
+    except Exception:
+        return _TWSE_PE_CACHE["data"] or {}
 
 
 # ── Weather (晴雨圖) ──────────────────────────────────────
@@ -230,24 +277,49 @@ def api_stock_fundamentals():
     if not symbol:
         return jsonify({"error": "no symbol"}), 400
     try:
-        yf_sym = symbol + ".TW" if market == "tw" else symbol
-        info = yf.Ticker(yf_sym).info
-        return jsonify({
-            "pe": info.get("trailingPE") or info.get("forwardPE"),
-            "eps": info.get("trailingEps") or info.get("epsTrailingTwelveMonths"),
-            "industry": info.get("industry") or info.get("sector", "Unknown"),
-        })
+        if market == "tw":
+            twse = _fetch_twse_pe()
+            entry = twse.get(symbol, {})
+            pe = entry.get("pe")
+            pb = entry.get("pb")
+            dy = entry.get("dividend_yield")
+            name = entry.get("name", "")
+            return jsonify({"pe": pe, "eps": None, "pb": pb, "dividend_yield": dy, "name": name, "industry": "台股"})
+        else:
+            yf_sym = symbol
+            info = yf.Ticker(yf_sym).info
+            return jsonify({
+                "pe": info.get("trailingPE") or info.get("forwardPE"),
+                "eps": info.get("trailingEps") or info.get("epsTrailingTwelveMonths"),
+                "industry": info.get("industry") or info.get("sector", "Unknown"),
+            })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
-oauth = OAuth(app)
-oauth.register(
-    name="google",
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
-    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-    client_kwargs={"scope": "openid email profile"},
-)
+
+
+@app.route("/api/portfolio-fundamentals")
+@cached(600)
+def api_portfolio_fundamentals():
+    market = request.args.get("market", "us")
+    cfg, _, _, wl_key = get_user_config(market)
+    symbols = cfg[wl_key]
+    results = {}
+    for sym in symbols:
+        try:
+            if market == "tw":
+                twse = _fetch_twse_pe()
+                entry = twse.get(sym, {})
+                results[sym] = {"pe": entry.get("pe"), "eps": None, "pb": entry.get("pb")}
+            else:
+                info = yf.Ticker(sym).info
+                results[sym] = {
+                    "pe": info.get("trailingPE") or info.get("forwardPE"),
+                    "eps": info.get("trailingEps") or info.get("epsTrailingTwelveMonths"),
+                }
+        except Exception:
+            results[sym] = {"pe": None, "eps": None}
+    return jsonify(results)
+
 
 # simple in-memory cache keyed by request path + query
 _cache = {}

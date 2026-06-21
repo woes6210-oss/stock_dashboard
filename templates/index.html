@@ -626,11 +626,24 @@ async function loadAnalysis(sym){
     document.getElementById("analysisSection").style.display = "none";
   }
 
-  // Fetch fundamentals
+  // Fetch fundamentals + portfolio averages
   try {
     var fres = await api("/api/stock-fundamentals?symbol=" + sym + "&market=" + currentMarket);
     var fdata = await fres.json();
-    renderBarChart(fdata.pe, null, fdata.eps, null);
+    var avgPe = null, avgEps = null;
+    try {
+      var pfres = await api("/api/portfolio-fundamentals?market=" + currentMarket);
+      var pfdata = await pfres.json();
+      var peVals = [], epsVals = [];
+      Object.keys(pfdata).forEach(function(s){
+        if(s === sym) return;
+        if(pfdata[s].pe != null) peVals.push(pfdata[s].pe);
+        if(pfdata[s].eps != null) epsVals.push(pfdata[s].eps);
+      });
+      if(peVals.length) avgPe = peVals.reduce(function(a,b){return a+b;},0) / peVals.length;
+      if(epsVals.length) avgEps = epsVals.reduce(function(a,b){return a+b;},0) / epsVals.length;
+    } catch(e){}
+    renderBarChart(fdata.pe, avgPe, fdata.eps, avgEps);
   } catch(e){}
 }
 
