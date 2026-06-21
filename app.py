@@ -253,6 +253,23 @@ def compute_weather_detail(symbol, market="us"):
         return {"weather": "☁️", "score": 0, "details": {}}
 
 
+# simple in-memory cache keyed by request path + query
+_cache = {}
+def cached(ttl_sec):
+    def deco(f):
+        @wraps(f)
+        def wrapper(*a, **kw):
+            key = request.path + "?" + request.query_string.decode("utf-8") if request.query_string else request.path
+            now = datetime.now()
+            if key in _cache and (now - _cache[key]["ts"]).total_seconds() < ttl_sec:
+                return _cache[key]["data"]
+            data = f(*a, **kw)
+            _cache[key] = {"data": data, "ts": now}
+            return data
+        return wrapper
+    return deco
+
+
 @app.route("/api/weather")
 @cached(120)
 def api_weather():
@@ -320,22 +337,6 @@ def api_portfolio_fundamentals():
             results[sym] = {"pe": None, "eps": None}
     return jsonify(results)
 
-
-# simple in-memory cache keyed by request path + query
-_cache = {}
-def cached(ttl_sec):
-    def deco(f):
-        @wraps(f)
-        def wrapper(*a, **kw):
-            key = request.path + "?" + request.query_string.decode("utf-8") if request.query_string else request.path
-            now = datetime.now()
-            if key in _cache and (now - _cache[key]["ts"]).total_seconds() < ttl_sec:
-                return _cache[key]["data"]
-            data = f(*a, **kw)
-            _cache[key] = {"data": data, "ts": now}
-            return data
-        return wrapper
-    return deco
 
 ALERTS_FILE = "alerts.json"
 CONFIG_FILE = "user_configs.json"
