@@ -346,34 +346,64 @@ def api_stock_fundamentals():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/portfolio-fundamentals")
+def _get_fundamentals(symbol, market="us"):
+    """Return {pe, eps, industry, pb} for a single symbol."""
+    try:
+        if market == "tw":
+            twse = _fetch_twse_pe()
+            entry = twse.get(symbol, {})
+            pe = entry.get("pe")
+            pb = entry.get("pb")
+            dy = entry.get("dividend_yield")
+            yf_sym = symbol + ".TW"
+            info = yf.Ticker(yf_sym).info
+            price = _get_current_price(yf_sym)
+            eps = _calc_eps_from_price_pe(price, pe)
+            industry = info.get("industry") or info.get("sector", "Unknown")
+            return {"pe": pe, "eps": eps, "pb": pb, "dividend_yield": dy, "industry": industry}
+        else:
+            info = yf.Ticker(symbol).info
+            price = _get_current_price(symbol)
+            tp = info.get("trailingPE")
+            eps = _calc_eps_from_price_pe(price, tp)
+            industry = info.get("industry") or info.get("sector", "Unknown")
+            return {"pe": tp, "eps": eps, "industry": industry}
+    except Exception:
+        return {"pe": None, "eps": None, "industry": None}
+
+
+@app.route("/api/industry-comparison")
 @cached(600)
-def api_portfolio_fundamentals():
+def api_industry_comparison():
+    symbol = request.args.get("symbol", "").upper()
     market = request.args.get("market", "us")
+    if not symbol:
+        return jsonify({"error": "no symbol"}), 400
     cfg, _, _, wl_key = get_user_config(market)
-    symbols = cfg[wl_key]
-    results = {}
-    for sym in symbols:
+    all_symbols = cfg[wl_key]
+    stock = _get_fundamentals(symbol, market)
+    stock_industry = stock.get("industry")
+    if not stock_industry or stock_industry == "Unknown":
+        return jsonify({"stock": stock, "industry_avg": None, "count": 0})
+    peers = []
+    for sym in all_symbols:
+        if sym == symbol:
+            continue
         try:
-            if market == "tw":
-                twse = _fetch_twse_pe()
-                entry = twse.get(sym, {})
-                pe = entry.get("pe")
-                pb = entry.get("pb")
-                yf_sym = sym + ".TW"
-                info = yf.Ticker(yf_sym).info
-                price = _get_current_price(yf_sym)
-                eps = _calc_eps_from_price_pe(price, pe)
-                results[sym] = {"pe": pe, "eps": eps, "pb": pb}
-            else:
-                info = yf.Ticker(sym).info
-                price = _get_current_price(sym)
-                tp = info.get("trailingPE")
-                eps = _calc_eps_from_price_pe(price, tp)
-                results[sym] = {"pe": tp, "eps": eps}
+            fd = _get_fundamentals(sym, market)
+            if fd.get("industry") == stock_industry:
+                peers.append(fd)
         except Exception:
-            results[sym] = {"pe": None, "eps": None}
-    return jsonify(results)
+            pass
+    if not peers:
+        return jsonify({"stock": stock, "industry_avg": None, "count": 0})
+    avg_pe = sum(p["pe"] for p in peers if p["pe"]) / sum(1 for p in peers if p["pe"]) if any(p["pe"] for p in peers) else None
+    avg_eps = sum(p["eps"] for p in peers if p["eps"]) / sum(1 for p in peers if p["eps"]) if any(p["eps"] for p in peers) else None
+    return jsonify({
+        "stock": stock,
+        "industry_avg": {"pe": round(avg_pe, 2) if avg_pe else None, "eps": round(avg_eps, 2) if avg_eps else None},
+        "count": len(peers),
+    })
 
 
 ALERTS_FILE = "alerts.json"

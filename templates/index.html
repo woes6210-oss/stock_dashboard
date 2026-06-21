@@ -144,7 +144,7 @@ input::placeholder{color:#4a5568}
         <canvas id="radarChart"></canvas>
       </div>
       <div>
-        <div style="font-size:10px;text-align:center;color:#a0aec0;margin-bottom:2px">同業平均</div>
+        <div style="font-size:10px;text-align:center;color:#a0aec0;margin-bottom:2px">自選股平均</div>
         <canvas id="industryRadar"></canvas>
       </div>
       <div>
@@ -683,7 +683,7 @@ async function loadAnalysis(sym){
     });
     if(count > 0){
       Object.keys(avgDetails).forEach(function(k){ avgDetails[k].raw = avgDetails[k].raw / count; });
-      renderRadar("industryRadar", avgDetails, "同業平均", 1);
+      renderRadar("industryRadar", avgDetails, "自選股平均", 1);
     } else {
       renderRadar("industryRadar", null, "", 1);
     }
@@ -691,25 +691,14 @@ async function loadAnalysis(sym){
     document.getElementById("analysisSection").style.display = "none";
   }
 
-  // Fetch fundamentals + portfolio averages
+  // Fetch industry comparison (個股 vs 同業平均)
   try {
-    var fres = await api("/api/stock-fundamentals?symbol=" + sym + "&market=" + currentMarket);
-    var fdata = await fres.json();
-    var avgPe = null, avgEps = null;
-    try {
-      var pfres = await api("/api/portfolio-fundamentals?market=" + currentMarket);
-      var pfdata = await pfres.json();
-      var peVals = [], epsVals = [];
-      Object.keys(pfdata).forEach(function(s){
-        if(s === sym) return;
-        if(pfdata[s].pe != null) peVals.push(pfdata[s].pe);
-        if(pfdata[s].eps != null) epsVals.push(pfdata[s].eps);
-      });
-      if(peVals.length) avgPe = peVals.reduce(function(a,b){return a+b;},0) / peVals.length;
-      if(epsVals.length) avgEps = epsVals.reduce(function(a,b){return a+b;},0) / epsVals.length;
-    } catch(e){}
-    renderPeChart(fdata.pe, avgPe);
-    renderEpsChart(fdata.eps, avgEps);
+    var icres = await api("/api/industry-comparison?symbol=" + sym + "&market=" + currentMarket);
+    var icdata = await icres.json();
+    var stockD = icdata.stock || {};
+    var indAvg = icdata.industry_avg || {};
+    renderPeChart(stockD.pe, indAvg.pe);
+    renderEpsChart(stockD.eps, indAvg.eps);
   } catch(e){}
 }
 
