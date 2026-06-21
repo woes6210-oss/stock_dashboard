@@ -23,6 +23,21 @@ except ImportError:
     raise
 
 app = Flask(__name__)
+
+# Startup env check – prints to gunicorn logs on Render
+_has_id = bool(os.environ.get("GOOGLE_CLIENT_ID"))
+_has_secret = bool(os.environ.get("GOOGLE_CLIENT_SECRET"))
+_has_key = bool(os.environ.get("SECRET_KEY"))
+if not (_has_id and _has_secret):
+    print("=" * 50)
+    print("WARNING: Google OAuth env vars are MISSING!")
+    print(f"  GOOGLE_CLIENT_ID set:    {'YES' if _has_id else 'MISSING!'}")
+    print(f"  GOOGLE_CLIENT_SECRET set: {'YES' if _has_secret else 'MISSING!'}")
+    print(f"  SECRET_KEY set:           {'YES' if _has_key else 'MISSING!'}")
+    print("Login via Google will fail with 401 invalid_client")
+    print(f"  GOOGLE_CLIENT_ID value:  {repr(os.environ.get('GOOGLE_CLIENT_ID', ''))}")
+    print(f"  GOOGLE_CLIENT_SECRET len: {len(os.environ.get('GOOGLE_CLIENT_SECRET', ''))}")
+    print("=" * 50)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 oauth = OAuth(app)
 oauth.register(
@@ -713,10 +728,5 @@ def api_economic_calendar():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    has_id = bool(os.environ.get("GOOGLE_CLIENT_ID"))
-    has_secret = bool(os.environ.get("GOOGLE_CLIENT_SECRET"))
     print(f"Stock Monitor started on port {port}")
-    print(f"  GOOGLE_CLIENT_ID set:    {'YES' if has_id else 'MISSING!'}")
-    print(f"  GOOGLE_CLIENT_SECRET set: {'YES' if has_secret else 'MISSING!'}")
-    print(f"  SECRET_KEY set:           {'YES' if os.environ.get('SECRET_KEY') else 'MISSING!'}")
     app.run(host="0.0.0.0", debug=False, port=port)
