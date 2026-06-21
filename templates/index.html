@@ -116,9 +116,9 @@ input::placeholder{color:#4a5568}
   <div class="period-bar" id="periodBar"></div>
 
   <div id="chartLegend" style="font-size:11px;display:flex;gap:12px;margin-bottom:8px;justify-content:center">
-    <span><span style="color:#888">▬</span> Pre</span>
-    <span><span style="color:#00d4ff">▬</span> Regular</span>
-    <span><span style="color:#ff9800">▬</span> After</span>
+    <span class="legend-pre"><span style="color:#888">▬</span> <span class="leg-pre">Pre</span></span>
+    <span class="legend-reg"><span style="color:#00d4ff">▬</span> <span class="leg-reg">Regular</span></span>
+    <span class="legend-aft"><span style="color:#ff9800">▬</span> <span class="leg-aft">After</span></span>
   </div>
 
   <hr>
@@ -300,22 +300,22 @@ async function loadChart(sym, period, interval){
   document.getElementById("chartTitle").textContent = sym.toUpperCase() + (currentMarket === "tw" ? ".TW" : "");
   const ctx = document.getElementById("chart");
   if(chart) chart.destroy();
-  var segColor;
-  if(currentMarket === "tw"){
-    segColor = {borderColor: "#00d4ff"};
-  } else {
-    segColor = {
-      borderColor: function(ctx){
-        var t = data.dates[ctx.p0DataIndex] || "";
-        var h = parseInt(t.slice(11,13));
-        var m = parseInt(t.slice(14,16));
-        var mins = h*60 + m;
-        if(mins < 570) return "#888";
-        if(mins < 960) return "#00d4ff";
-        return "#ff9800";
-      }
-    };
+  function getSegColor(t){
+    var h = parseInt(t.slice(11,13));
+    var m = parseInt(t.slice(14,16));
+    var mins = h*60 + m;
+    if(currentMarket === "tw"){
+      // TW: pre 08:30-09:00 (510-540), regular 09:00-13:30 (540-810), after 14:00-14:30 (840-870)
+      if(mins < 540) return "#888";
+      if(mins < 810) return "#00d4ff";
+      return "#ff9800";
+    }
+    // US: pre before 09:30 (570), regular 09:30-16:00 (570-960), after after 16:00 (960)
+    if(mins < 570) return "#888";
+    if(mins < 960) return "#00d4ff";
+    return "#ff9800";
   }
+  var segColor = {borderColor: function(ctx){ return getSegColor(data.dates[ctx.p0DataIndex] || ""); }};
   chart = new Chart(ctx, {
     type:"line",
     data:{
@@ -672,7 +672,17 @@ document.getElementById("marketTabs").addEventListener("click", function(e){
   document.getElementById("chartTitle").textContent = "";
   selectedSymbol = null;
   var legend = document.getElementById("chartLegend");
-  legend.style.display = currentMarket === "us" ? "flex" : "none";
+  if(currentMarket === "tw"){
+    legend.style.display = "flex";
+    document.querySelector(".leg-pre").textContent = "盤前";
+    document.querySelector(".leg-reg").textContent = "盤中";
+    document.querySelector(".leg-aft").textContent = "盤後";
+  } else {
+    legend.style.display = "flex";
+    document.querySelector(".leg-pre").textContent = "Pre";
+    document.querySelector(".leg-reg").textContent = "Regular";
+    document.querySelector(".leg-aft").textContent = "After";
+  }
   loadIndices();
   loadEconCal();
   loadQuotes();

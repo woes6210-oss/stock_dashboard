@@ -268,7 +268,7 @@ def api_chart():
     yf_sym = symbol + ".TW" if market == "tw" else symbol
     try:
         hist = yf.Ticker(yf_sym).history(
-            period=period, interval=interval, prepost=(market == "us")
+            period=period, interval=interval, prepost=True
         )
         if hist.empty:
             return jsonify({"error": "no data"}), 404
