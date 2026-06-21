@@ -658,6 +658,60 @@ const POPULAR_TW = [
 })();
 
 /* =========================
+   AUTO-SELECT MARKET TAB
+========================= */
+
+function getDefaultMarket() {
+  var now = new Date();
+  var u = now.getUTCHours() * 60 + now.getUTCMinutes();
+  var day = now.getUTCDay();
+
+  // US DST check
+  var y = now.getUTCFullYear();
+  var edt = (function(){
+    var m1 = new Date(y,2,1), m1d = m1.getUTCDay();
+    var s = new Date(y,2,m1d===0?8:15-m1d,7,0,0);
+    var n1 = new Date(y,10,1), n1d = n1.getUTCDay();
+    var e = new Date(y,10,n1d===0?1:8-n1d,6,0,0);
+    return now >= s && now < e;
+  })();
+  var et = ((u/60|0) + (edt?-4:-5) + 24) % 24 * 60 + now.getUTCMinutes();
+  var tw = ((u/60|0) + 8) % 24 * 60 + now.getUTCMinutes();
+
+  // Compute day-of-week in each timezone
+  var etDow = (day + ((u/60|0)+(edt?-4:-5) < 0 ? -1 : (u/60|0)+(edt?-4:-5) >= 24 ? 1 : 0) + 7) % 7;
+  var twDow = (day + ((u/60|0)+8 >= 24 ? 1 : 0)) % 7;
+
+  // 1) Active market wins
+  if (twDow>=1 && twDow<=5 && tw>=510 && tw<810) return 'tw';   // 8:30-13:30 TST
+  if (etDow>=1 && etDow<=5 && et>=240 && et<960) return 'us';   // 4:00-16:00 ET
+
+  // 2) Both closed → whichever opens next (minutes away)
+  function nextOpen(curDow, curMin, openMin, closeMin) {
+    for (var d=0; d<7; d++) {
+      var cd = (curDow + d) % 7;
+      if (cd>=1 && cd<=5) {
+        if (d===0 && curMin>=closeMin) continue;
+        if (d===0 && curMin<openMin) return openMin - curMin;
+        return (1440 - curMin) + d*1440 + openMin;
+      }
+    }
+    return 999999;
+  }
+  var tn = nextOpen(twDow, tw, 510, 870);
+  var un = nextOpen(etDow, et, 240, 1200);
+  return tn <= un ? 'tw' : 'us';
+}
+
+// Override default tab if non-US market is more relevant
+var autoMarket = getDefaultMarket();
+if (autoMarket !== 'us') {
+  currentMarket = autoMarket;
+  document.querySelector("#marketTabs .tab-btn.active").classList.remove("active");
+  document.querySelector("#marketTabs button[data-market='"+autoMarket+"']").classList.add("active");
+}
+
+/* =========================
    INIT
 ========================= */
 
