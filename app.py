@@ -10,6 +10,9 @@ from pathlib import Path
 
 from functools import wraps
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from authlib.integrations.flask_client import OAuth
 
