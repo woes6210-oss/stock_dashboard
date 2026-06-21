@@ -182,8 +182,16 @@ def auth_login():
 
 @app.route("/auth/callback")
 def auth_callback():
-    token = oauth.google.authorize_access_token()
-    user = token.get("userinfo") or oauth.google.parse_id_token(token)
+    try:
+        token = oauth.google.authorize_access_token()
+    except Exception as e:
+        print(f"[AUTH ERROR] authorize_access_token failed: {e}")
+        return f"OAuth 授權失敗: {e}", 400
+    try:
+        user = token.get("userinfo") or oauth.google.parse_id_token(token)
+    except Exception as e:
+        print(f"[AUTH ERROR] parse_id_token failed: {e}")
+        return f"Token 解析失敗: {e}", 400
     session["user_sub"] = user["sub"]
     session["user_name"] = user.get("name", "")
     session["user_email"] = user.get("email", "")
@@ -705,5 +713,10 @@ def api_economic_calendar():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    has_id = bool(os.environ.get("GOOGLE_CLIENT_ID"))
+    has_secret = bool(os.environ.get("GOOGLE_CLIENT_SECRET"))
     print(f"Stock Monitor started on port {port}")
+    print(f"  GOOGLE_CLIENT_ID set:    {'YES' if has_id else 'MISSING!'}")
+    print(f"  GOOGLE_CLIENT_SECRET set: {'YES' if has_secret else 'MISSING!'}")
+    print(f"  SECRET_KEY set:           {'YES' if os.environ.get('SECRET_KEY') else 'MISSING!'}")
     app.run(host="0.0.0.0", debug=False, port=port)
