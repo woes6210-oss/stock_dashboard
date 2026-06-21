@@ -8,11 +8,7 @@ import os
 import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-try:
-    from finmind.datasets import FinMind
-    _HAS_FINMIND = True
-except ImportError:
-    _HAS_FINMIND = False
+# FinMind temporarily removed: lxml 4.x incompatible with Python 3.14 C API
 from datetime import datetime, timedelta
 from pathlib import Path
 
