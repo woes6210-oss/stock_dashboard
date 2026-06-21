@@ -31,6 +31,17 @@ TW_DEFAULT_SYMBOLS = [
     "2881", "2303", "2382", "2357", "3711"
 ]
 
+TW_NAMES = {
+    "2330": "台積電", "2317": "鴻海", "2454": "聯發科", "2308": "台達電", "2412": "中華電",
+    "2881": "富邦金", "2882": "國泰金", "2303": "聯電", "2382": "廣達", "2357": "華碩",
+    "3231": "緯創", "3711": "日月光", "2002": "中鋼", "1301": "台塑", "1326": "台化",
+    "1216": "統一", "2353": "宏碁", "2376": "技嘉", "3037": "欣興", "3034": "聯詠",
+    "2498": "宏達電", "3008": "大立光", "4904": "遠傳", "2886": "兆豐金", "2891": "中信金",
+    "2885": "元大金", "2603": "長榮", "2618": "長榮航", "3443": "創意", "5269": "祥碩",
+    "6669": "緯穎", "2301": "光寶科", "2345": "智邦", "2356": "英業達",
+    "2409": "友達", "2449": "京元電子", "2451": "創見", "2542": "興富發",
+}
+
 DEFAULT_CONFIG = {
     "watchlist_us": DEFAULT_SYMBOLS,
     "watchlist_tw": TW_DEFAULT_SYMBOLS,
@@ -214,6 +225,7 @@ def _fetch_quotes(symbols, market="us"):
                     pass
                 results.append({
                     "symbol": sym,
+                    "name": TW_NAMES.get(sym, "") if market == "tw" else "",
                     "price": round(price, 2),
                     "change": round(change, 2),
                     "change_pct": round(change_pct, 2),
@@ -344,18 +356,23 @@ def check_alerts():
 
 # ── Market Indices ─────────────────────────────────────
 
-INDICES_SYMBOLS = [
-    ("^GSPC", "S&P 500"), ("^IXIC", "NASDAQ"), ("^DJI", "DOW"), ("^SOX", "SOX"),
-    ("^VIX", "VIX"), ("^RUT", "RUSSELL"),
+US_INDICES = [
+    ("^GSPC", "S&P 500"), ("^IXIC", "NASDAQ"), ("^DJI", "DOW"),
+    ("^SOX", "SOX"), ("^VIX", "VIX"), ("^RUT", "RUSSELL"),
+]
+TW_INDICES = [
+    ("^TWII", "加權指數"), ("^TWO", "櫃買指數"),
 ]
 INDICES_PERIOD_MAP = {"1d": ("1d", "5m"), "5d": ("5d", "5m"), "1mo": ("1mo", "1d"), "3mo": ("3mo", "1d")}
 
 @app.route("/api/indices")
 def api_indices():
+    market = request.args.get("market", "us")
     period = request.args.get("period", "1mo")
     p, iv = INDICES_PERIOD_MAP.get(period, ("1mo", "1d"))
+    symbols = TW_INDICES if market == "tw" else US_INDICES
     results = []
-    for sym, label in INDICES_SYMBOLS:
+    for sym, label in symbols:
         try:
             hist = yf.Ticker(sym).history(period=p, interval=iv)
             if hist.empty:
@@ -393,176 +410,14 @@ def next_nth_weekday(year, month, nth, weekday):
         d += timedelta(days=1)
     return None
 
-@app.route("/api/economic-calendar")
-def api_economic_calendar():
-    today = datetime.now()
-    events = [
-        {"date": "", "time": "Ongoing", "event": "Fed Interest Rate Decision (FOMC)", "impact": "high",
-         "industry": "Financials, USD, Bonds", "note": "利率升降影響全市場流動性與資金成本",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "Consumer Price Index (CPI) MoM", "impact": "high",
-         "industry": "All sectors, USD, Bonds", "note": "衡量通膨核心指標，影響 Fed 利率決策",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "Non-Farm Payrolls (NFP)", "impact": "high",
-         "industry": "All sectors, USD, Equities", "note": "就業市場健康度風向球，影響美元與大盤",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "Producer Price Index (PPI) MoM", "impact": "high",
-         "industry": "Industrials, Energy, Materials", "note": "生產端物價壓力，領先 CPI 指標",
-         "date_obj": None},
-        {"date": "", "time": "10:00", "event": "ISM Manufacturing PMI", "impact": "high",
-         "industry": "Industrials, Tech, Materials", "note": "製造業景氣榮枯分水嶺 (50以上擴張)",
-         "date_obj": None},
-        {"date": "", "time": "10:00", "event": "ISM Services PMI", "impact": "high",
-         "industry": "Consumer, Tech, Financials", "note": "服務業佔美國 GDP 約 80%，關鍵景氣指標",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "Retail Sales MoM", "impact": "medium",
-         "industry": "Consumer, Retail, E-commerce", "note": "消費者支出動能，影響消費類股",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "Initial Jobless Claims", "impact": "medium",
-         "industry": "All sectors", "note": "每週就業數據，即時反映勞動市場變化",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "GDP (Annualized) QoQ", "impact": "high",
-         "industry": "All sectors, USD", "note": "美國經濟成長綜合衡量指標",
-         "date_obj": None},
-        {"date": "", "time": "10:30", "event": "EIA Crude Oil Inventories", "impact": "medium",
-         "industry": "Energy, Oil & Gas", "note": "原油庫存增減影響油價與能源股",
-         "date_obj": None},
-        {"date": "", "time": "14:00", "event": "Treasury 10-Year Note Auction", "impact": "medium",
-         "industry": "Bonds, Financials", "note": "公債標售結果反映市場利率預期",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "Building Permits MoM", "impact": "low",
-         "industry": "Housing, Construction", "note": "住宅建設許可數，反映房市景氣",
-         "date_obj": None},
-        {"date": "", "time": "10:00", "event": "Consumer Sentiment (U.Mich)", "impact": "low",
-         "industry": "Consumer, Retail", "note": "消費者信心指數，影響消費支出預期",
-         "date_obj": None},
-        {"date": "", "time": "10:00", "event": "JOLTS Job Openings", "impact": "low",
-         "industry": "All sectors", "note": "勞動市場供需缺口指標，Fed 關注的佐證數據",
-         "date_obj": None},
-        {"date": "", "time": "08:30", "event": "Trade Balance", "impact": "low",
-         "industry": "USD, Multinationals", "note": "進出口貿易差額，影響美元匯率",
-         "date_obj": None},
-    ]
+def next_weekday(d, wd):
+    """Return next occurrence of weekday (0=Mon..6=Sun) on or after d."""
+    days_ahead = wd - d.weekday()
+    if days_ahead <= 0:
+        days_ahead += 7
+    return d + timedelta(days=days_ahead)
 
-    y = today.year
-    m = today.month
-
-    # NFP: first Friday of the month
-    d1 = next_nth_weekday(y, m, 1, 4)
-    if d1 and d1 < today and m == today.month:
-        d1 = next_nth_weekday(y, m+1 if m<12 else 1, 1, 4)
-        if d1 and m == 12: d1 = d1.replace(year=y+1)
-        elif d1: d1 = d1.replace(month=m+1)
-    events[2]["date_obj"] = d1
-
-    # CPI: usually around 12th-16th, pick day 14
-    d2 = datetime(y, m, 14)
-    if d2 < today and m == today.month:
-        d2 = datetime(y, m+1 if m<12 else 1, 14)
-        if m == 12: d2 = d2.replace(year=y+1)
-    while d2.weekday() >= 5:
-        d2 += timedelta(days=1)
-    events[1]["date_obj"] = d2
-
-    # PPI: usually day 12
-    d3 = datetime(y, m, 12)
-    if d3 < today and m == today.month:
-        d3 = datetime(y, m+1 if m<12 else 1, 12)
-        if m == 12: d3 = d3.replace(year=y+1)
-    while d3.weekday() >= 5:
-        d3 += timedelta(days=1)
-    events[3]["date_obj"] = d3
-
-    # FOMC: approximate next month
-    d4 = datetime(y, m+1 if m<12 else 1, 15)
-    if m == 12: d4 = d4.replace(year=y+1)
-    while d4.weekday() >= 5:
-        d4 += timedelta(days=1)
-    events[0]["date_obj"] = d4
-
-    # ISM Manufacturing: day 1
-    d5 = datetime(y, m, 1)
-    if d5 < today and m == today.month:
-        d5 = datetime(y, m+1 if m<12 else 1, 1)
-        if m == 12: d5 = d5.replace(year=y+1)
-    events[4]["date_obj"] = d5
-
-    # ISM Services: day 3
-    d6 = datetime(y, m, 3)
-    if d6 < today and m == today.month:
-        d6 = datetime(y, m+1 if m<12 else 1, 3)
-        if m == 12: d6 = d6.replace(year=y+1)
-    events[5]["date_obj"] = d6
-
-    # Retail Sales: day 15
-    d7 = datetime(y, m, 15)
-    if d7 < today and m == today.month:
-        d7 = datetime(y, m+1 if m<12 else 1, 15)
-        if m == 12: d7 = d7.replace(year=y+1)
-    while d7.weekday() >= 5:
-        d7 += timedelta(days=1)
-    events[6]["date_obj"] = d7
-
-    # GDP: quarterly
-    q_months = [1, 4, 7, 10]
-    qm = None
-    for q in q_months:
-        d8 = datetime(y, q, 25)
-        if d8 > today:
-            qm = d8
-            break
-    if not qm:
-        qm = datetime(y+1, 1, 25)
-    events[8]["date_obj"] = qm
-
-    # Building Permits: day 20
-    d9 = datetime(y, m, 20)
-    if d9 < today and m == today.month:
-        d9 = datetime(y, m+1 if m<12 else 1, 20)
-        if m == 12: d9 = d9.replace(year=y+1)
-    while d9.weekday() >= 5:
-        d9 += timedelta(days=1)
-    events[11]["date_obj"] = d9
-
-    # Consumer Sentiment: 2nd Friday (day 10)
-    d10 = datetime(y, m, 10)
-    if d10 < today and m == today.month:
-        d10 = datetime(y, m+1 if m<12 else 1, 10)
-        if m == 12: d10 = d10.replace(year=y+1)
-    while d10.weekday() != 4:
-        d10 += timedelta(days=1)
-    events[12]["date_obj"] = d10
-
-    # JOLTS: day 6
-    d11 = datetime(y, m, 6)
-    if d11 < today and m == today.month:
-        d11 = datetime(y, m+1 if m<12 else 1, 6)
-        if m == 12: d11 = d11.replace(year=y+1)
-    while d11.weekday() >= 5:
-        d11 += timedelta(days=1)
-    events[13]["date_obj"] = d11
-
-    # Trade Balance: day 5
-    d12 = datetime(y, m, 5)
-    if d12 < today and m == today.month:
-        d12 = datetime(y, m+1 if m<12 else 1, 5)
-        if m == 12: d12 = d12.replace(year=y+1)
-    while d12.weekday() >= 5:
-        d12 += timedelta(days=1)
-    events[14]["date_obj"] = d12
-
-    # Initial Jobless Claims: every Thursday
-    def next_weekday(d, wd):
-        days_ahead = wd - d.weekday()
-        if days_ahead <= 0:
-            days_ahead += 7
-        return d + timedelta(days=days_ahead)
-    events[7]["date_obj"] = next_weekday(today, 3)
-    # EIA Crude Oil: every Wednesday
-    events[9]["date_obj"] = next_weekday(today, 2)
-    # Treasury 10-Year Auction: next Monday
-    events[10]["date_obj"] = next_weekday(today, 0)
-
+def _build_calendar(events, today):
     out = []
     for ev in events:
         if ev["date_obj"]:
@@ -574,14 +429,197 @@ def api_economic_calendar():
                 ev["days"] = f"{MONTHS[ev['date_obj'].month-1]} {ev['date_obj'].day}"
                 if ev["date_obj"].year > today.year:
                     ev["days"] += f" {ev['date_obj'].year}"
-        if ev["date_obj"]:
             ev["_sort"] = ev["date_obj"].strftime("%Y-%m-%d")
         else:
             ev["_sort"] = "9999-99-99"
         ev.pop("date_obj", None)
         out.append(ev)
+    return sorted(out, key=lambda x: x.get("_sort", "9999-99-99"))
 
-    return jsonify(sorted(out, key=lambda x: x.get("_sort", "9999-99-99")))
+def _us_economic_calendar():
+    today = datetime.now()
+    y, m = today.year, today.month
+    events = [
+        {"date":"","time":"Ongoing","event":"Fed Interest Rate Decision (FOMC)","impact":"high",
+         "industry":"Financials, USD, Bonds","note":"利率升降影響全市場流動性與資金成本","date_obj":None},
+        {"date":"","time":"08:30","event":"Consumer Price Index (CPI) MoM","impact":"high",
+         "industry":"All sectors, USD, Bonds","note":"衡量通膨核心指標，影響 Fed 利率決策","date_obj":None},
+        {"date":"","time":"08:30","event":"Non-Farm Payrolls (NFP)","impact":"high",
+         "industry":"All sectors, USD, Equities","note":"就業市場健康度風向球","date_obj":None},
+        {"date":"","time":"08:30","event":"Producer Price Index (PPI) MoM","impact":"high",
+         "industry":"Industrials, Energy, Materials","note":"生產端物價壓力","date_obj":None},
+        {"date":"","time":"10:00","event":"ISM Manufacturing PMI","impact":"high",
+         "industry":"Industrials, Tech, Materials","note":"製造業景氣榮枯分水嶺","date_obj":None},
+        {"date":"","time":"10:00","event":"ISM Services PMI","impact":"high",
+         "industry":"Consumer, Tech, Financials","note":"服務業景氣指標","date_obj":None},
+        {"date":"","time":"08:30","event":"Retail Sales MoM","impact":"medium",
+         "industry":"Consumer, Retail, E-commerce","note":"消費者支出動能","date_obj":None},
+        {"date":"","time":"08:30","event":"Initial Jobless Claims","impact":"medium",
+         "industry":"All sectors","note":"每週就業數據","date_obj":None},
+        {"date":"","time":"08:30","event":"GDP (Annualized) QoQ","impact":"high",
+         "industry":"All sectors, USD","note":"經濟成長綜合衡量指標","date_obj":None},
+        {"date":"","time":"10:30","event":"EIA Crude Oil Inventories","impact":"medium",
+         "industry":"Energy, Oil & Gas","note":"原油庫存","date_obj":None},
+        {"date":"","time":"14:00","event":"Treasury 10-Year Note Auction","impact":"medium",
+         "industry":"Bonds, Financials","note":"公債標售","date_obj":None},
+        {"date":"","time":"08:30","event":"Building Permits MoM","impact":"low",
+         "industry":"Housing, Construction","note":"住宅許可","date_obj":None},
+        {"date":"","time":"10:00","event":"Consumer Sentiment (U.Mich)","impact":"low",
+         "industry":"Consumer, Retail","note":"消費者信心","date_obj":None},
+        {"date":"","time":"10:00","event":"JOLTS Job Openings","impact":"low",
+         "industry":"All sectors","note":"勞動供需缺口","date_obj":None},
+        {"date":"","time":"08:30","event":"Trade Balance","impact":"low",
+         "industry":"USD, Multinationals","note":"貿易差額","date_obj":None},
+    ]
+    # NFP: first Friday
+    d1 = next_nth_weekday(y, m, 1, 4)
+    if d1 and d1 < today and m == today.month:
+        d1 = next_nth_weekday(y, m+1 if m<12 else 1, 1, 4) or d1
+    events[2]["date_obj"] = d1
+    # CPI: day 14
+    d2 = datetime(y, m, 14)
+    if d2 < today and m == today.month:
+        d2 = datetime(y, m+1 if m<12 else 1, 14)
+        if m == 12: d2 = d2.replace(year=y+1)
+    while d2.weekday() >= 5: d2 += timedelta(days=1)
+    events[1]["date_obj"] = d2
+    # PPI: day 12
+    d3 = datetime(y, m, 12)
+    if d3 < today and m == today.month:
+        d3 = datetime(y, m+1 if m<12 else 1, 12)
+        if m == 12: d3 = d3.replace(year=y+1)
+    while d3.weekday() >= 5: d3 += timedelta(days=1)
+    events[3]["date_obj"] = d3
+    # FOMC: next month 15
+    d4 = datetime(y, m+1 if m<12 else 1, 15)
+    if m == 12: d4 = d4.replace(year=y+1)
+    while d4.weekday() >= 5: d4 += timedelta(days=1)
+    events[0]["date_obj"] = d4
+    # ISM Mfg: day 1
+    d5 = datetime(y, m, 1)
+    if d5 < today and m == today.month:
+        d5 = datetime(y, m+1 if m<12 else 1, 1)
+        if m == 12: d5 = d5.replace(year=y+1)
+    events[4]["date_obj"] = d5
+    # ISM Services: day 3
+    d6 = datetime(y, m, 3)
+    if d6 < today and m == today.month:
+        d6 = datetime(y, m+1 if m<12 else 1, 3)
+        if m == 12: d6 = d6.replace(year=y+1)
+    events[5]["date_obj"] = d6
+    # Retail Sales: day 15
+    d7 = datetime(y, m, 15)
+    if d7 < today and m == today.month:
+        d7 = datetime(y, m+1 if m<12 else 1, 15)
+        if m == 12: d7 = d7.replace(year=y+1)
+    while d7.weekday() >= 5: d7 += timedelta(days=1)
+    events[6]["date_obj"] = d7
+    # GDP: quarterly
+    qm = None
+    for q in [1,4,7,10]:
+        d8 = datetime(y, q, 25)
+        if d8 > today: qm = d8; break
+    if not qm: qm = datetime(y+1, 1, 25)
+    events[8]["date_obj"] = qm
+    # Building Permits: day 20
+    d9 = datetime(y, m, 20)
+    if d9 < today and m == today.month:
+        d9 = datetime(y, m+1 if m<12 else 1, 20)
+        if m == 12: d9 = d9.replace(year=y+1)
+    while d9.weekday() >= 5: d9 += timedelta(days=1)
+    events[11]["date_obj"] = d9
+    # Consumer Sentiment: 2nd Fri (day ~10)
+    d10 = datetime(y, m, 10)
+    if d10 < today and m == today.month:
+        d10 = datetime(y, m+1 if m<12 else 1, 10)
+        if m == 12: d10 = d10.replace(year=y+1)
+    while d10.weekday() != 4: d10 += timedelta(days=1)
+    events[12]["date_obj"] = d10
+    # JOLTS: day 6
+    d11 = datetime(y, m, 6)
+    if d11 < today and m == today.month:
+        d11 = datetime(y, m+1 if m<12 else 1, 6)
+        if m == 12: d11 = d11.replace(year=y+1)
+    while d11.weekday() >= 5: d11 += timedelta(days=1)
+    events[13]["date_obj"] = d11
+    # Trade Balance: day 5
+    d12 = datetime(y, m, 5)
+    if d12 < today and m == today.month:
+        d12 = datetime(y, m+1 if m<12 else 1, 5)
+        if m == 12: d12 = d12.replace(year=y+1)
+    while d12.weekday() >= 5: d12 += timedelta(days=1)
+    events[14]["date_obj"] = d12
+    events[7]["date_obj"] = next_weekday(today, 3)  # Jobless Claims: Thu
+    events[9]["date_obj"] = next_weekday(today, 2)   # EIA: Wed
+    events[10]["date_obj"] = next_weekday(today, 0)  # Treasury: Mon
+    return _build_calendar(events, today)
+
+def _tw_economic_calendar():
+    today = datetime.now()
+    y, m = today.year, today.month
+    events = [
+        {"date":"","time":"16:00","event":"央行理監事會議 (利率決策)","impact":"high",
+         "industry":"金融, 台幣, 債券","note":"每季一次 (3/6/9/12月)，影響利率與匯率","date_obj":None},
+        {"date":"","time":"16:00","event":"CPI 消費者物價指數","impact":"high",
+         "industry":"全市場, 央行","note":"每月 5-7 日發布，衡量通膨","date_obj":None},
+        {"date":"","time":"16:00","event":"GDP 經濟成長率 (季)","impact":"high",
+         "industry":"全市場, 台幣","note":"每季發布，綜合經濟衡量指標","date_obj":None},
+        {"date":"","time":"16:00","event":"外銷訂單","impact":"medium",
+         "industry":"製造業, 出口","note":"每月 20 日發布，出口領先指標","date_obj":None},
+        {"date":"","time":"16:00","event":"工業生產指數","impact":"medium",
+         "industry":"製造業, 工業","note":"每月 23 日發布，生產活動衡量","date_obj":None},
+        {"date":"","time":"16:00","event":"失業率","impact":"medium",
+         "industry":"全市場","note":"每月 22 日發布，勞動市場健康度","date_obj":None},
+        {"date":"","time":"16:00","event":"進出口貿易統計","impact":"medium",
+         "industry":"出口, 台幣","note":"每月 7-8 日發布，貿易表現","date_obj":None},
+        {"date":"","time":"16:00","event":"M1B / M2 貨幣總計數","impact":"low",
+         "industry":"金融, 台幣","note":"每月 25 日發布，市場資金水位","date_obj":None},
+        {"date":"","time":"16:00","event":"景氣對策信號 (燈號)","impact":"low",
+         "industry":"全市場","note":"每月 27 日發布，綜合景氣判斷","date_obj":None},
+    ]
+    def mday(dd):
+        d = datetime(y, m, dd)
+        if d < today and m == today.month:
+            d = datetime(y, m+1 if m<12 else 1, dd)
+            if m == 12: d = d.replace(year=y+1)
+        return d
+    # CPI: day 7
+    events[1]["date_obj"] = mday(7)
+    # Export Orders: day 20
+    events[3]["date_obj"] = mday(20)
+    # Industrial Production: day 23
+    events[4]["date_obj"] = mday(23)
+    # Unemployment: day 22
+    events[5]["date_obj"] = mday(22)
+    # Trade: day 8
+    events[6]["date_obj"] = mday(8)
+    # M1B/M2: day 25
+    events[7]["date_obj"] = mday(25)
+    # Economic monitoring: day 27
+    events[8]["date_obj"] = mday(27)
+    # Central bank: quarterly (3/6/9/12)
+    q_months = [3, 6, 9, 12]
+    qm = None
+    for qm in [datetime(y, q, 15) for q in q_months]:
+        if qm > today: break
+    if qm and qm < today: qm = datetime(y+1, 3, 15)
+    if not qm: qm = datetime(y+1, 3, 15)
+    events[0]["date_obj"] = qm
+    # GDP: quarterly (2/5/8/11 ~ day 25)
+    for q in [2, 5, 8, 11]:
+        dg = datetime(y, q, 25)
+        if dg > today: break
+    else:
+        dg = datetime(y+1, 2, 25)
+    events[2]["date_obj"] = dg
+    return _build_calendar(events, today)
+
+@app.route("/api/economic-calendar")
+def api_economic_calendar():
+    market = request.args.get("market", "us")
+    if market == "tw":
+        return jsonify(_tw_economic_calendar())
+    return jsonify(_us_economic_calendar())
 
 
 # ── run ─────────────────────────────────────────────────

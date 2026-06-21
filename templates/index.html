@@ -95,7 +95,7 @@ input::placeholder{color:#4a5568}
 <div class="left-panel">
   <table>
     <thead>
-      <tr><th>Symbol</th><th>Price</th><th>Chg%</th><th>High</th><th>Low</th><th>Vol</th><th>MktCap</th><th>Target</th><th></th></tr>
+      <tr><th>名稱</th><th>Symbol</th><th>Price</th><th>Chg%</th><th>High</th><th>Low</th><th>Vol</th><th>MktCap</th><th>Target</th><th></th></tr>
     </thead>
     <tbody id="tbl"></tbody>
   </table>
@@ -258,14 +258,14 @@ async function loadQuotes(){
   data.quotes.forEach(q => {
     const tr = document.createElement("tr");
     if(!q.ok){
-      tr.innerHTML = `<td>${q.symbol}</td><td colspan="8" style="color:#ff1744">${q.error}</td>`;
+      tr.innerHTML = `<td>—</td><td>${q.symbol}</td><td colspan="8" style="color:#ff1744">${q.error}</td>`;
       tbody.appendChild(tr);
       return;
     }
     const cls = q.change >= 0 ? "green" : "red";
-    var symDisplay = currentMarket === "tw" ? q.symbol : q.symbol;
     tr.innerHTML = `
-      <td>${symDisplay}</td>
+      <td style="font-size:11px">${currentMarket === "tw" ? (q.name || '—') : '—'}</td>
+      <td>${q.symbol}</td>
       <td class="${cls}">${currentMarket === "tw" ? '' : '$'}${q.price}</td>
       <td class="${cls}">${q.change >= 0 ? "+" : ""}${q.change_pct}%</td>
       <td>${currentMarket === "tw" ? '' : '$'}${q.high}</td>
@@ -435,7 +435,7 @@ function drawSparkline(cv, vals, dates, color){
 async function loadIndices(){
   try {
     const period = (document.querySelector("#idxPeriodBar .active") || {}).value || "1mo";
-    const res = await fetch("/api/indices?period=" + period);
+    const res = await fetch("/api/indices?period=" + period + "&market=" + currentMarket);
     const json = await res.json();
     const data = json.indices;
     const box = document.getElementById("indices");
@@ -530,7 +530,7 @@ function renderEconCal(){
 
 async function loadEconCal(){
   try {
-    var res = await fetch("/api/economic-calendar");
+    var res = await fetch("/api/economic-calendar?market=" + currentMarket);
     var data = await res.json();
     _econData = data.map(function(ev){
       return { ...ev, _rawDate: ev.days || ev.date };
@@ -674,6 +674,7 @@ document.getElementById("marketTabs").addEventListener("click", function(e){
   var legend = document.getElementById("chartLegend");
   legend.style.display = currentMarket === "us" ? "flex" : "none";
   loadIndices();
+  loadEconCal();
   loadQuotes();
 });
 
