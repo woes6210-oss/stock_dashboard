@@ -38,6 +38,104 @@ if not (_has_id and _has_secret):
     print(f"  GOOGLE_CLIENT_ID value:  {repr(os.environ.get('GOOGLE_CLIENT_ID', ''))}")
     print(f"  GOOGLE_CLIENT_SECRET len: {len(os.environ.get('GOOGLE_CLIENT_SECRET', ''))}")
     print("=" * 50)
+
+
+# ── Weather (晴雨圖) ──────────────────────────────────────
+
+def _sma(data, n):
+    if len(data) < n: return None
+    return sum(data[-n:]) / n
+
+def _ema(data, span):
+    k = 2 / (span + 1)
+    result = [data[0]]
+    for v in data[1:]:
+        result.append(v * k + result[-1] * (1 - k))
+    return result
+
+def compute_weather(symbol, market="us"):
+    """
+    技術面評分 → 晴雨圖
+    ☀️ 晴天（偏多） ≧ 25 分
+    ☁️ 陰天（中立） -24 ~ 24 分
+    🌧️ 雨天（偏空） ≦ -25 分
+    """
+    try:
+        yf_sym = symbol + ".TW" if market == "tw" else symbol
+        ticker = yf.Ticker(yf_sym)
+        hist = ticker.history(period="2mo", interval="1d")
+        if hist.empty or len(hist) < 15:
+            return "☁️"
+
+        close = hist["Close"].tolist()
+        volume = hist["Volume"].tolist()
+        score = 0
+
+        # 1. 均線排列 (max ±20)
+        m5 = _sma(close, 5)
+        m10 = _sma(close, 10)
+        m20 = _sma(close, 20)
+        latest = close[-1]
+        if m5 and m10 and m20:
+            if m5 > m10 > m20 and latest > m20:
+                score += 20
+            elif m5 < m10 < m20 and latest < m20:
+                score -= 20
+
+        # 2. MACD (max ±15)
+        if len(close) >= 26:
+            ema12 = _ema(close, 12)[-1]
+            ema26 = _ema(close, 26)[-1]
+            macd_line = ema12 - ema26
+            macd_hist = [a - b for a, b in zip(_ema(close, 12), _ema(close, 26))]
+            signal_line = _ema(macd_hist, 9)[-1] if len(macd_hist) >= 9 else 0
+            if macd_line > signal_line:
+                score += 15
+            else:
+                score -= 15
+
+        # 3. RSI (max ±10)
+        if len(close) >= 15:
+            gains = [close[i] - close[i-1] for i in range(1, len(close)) if close[i] > close[i-1]]
+            losses = [close[i-1] - close[i] for i in range(1, len(close)) if close[i] < close[i-1]]
+            avg_gain = sum(gains[-14:]) / 14 if len(gains) >= 14 else (sum(gains) / max(len(gains), 1) or 0.001)
+            avg_loss = sum(losses[-14:]) / 14 if len(losses) >= 14 else (sum(losses) / max(len(losses), 1) or 0.001)
+            rs = avg_gain / avg_loss if avg_loss > 0 else 100
+            rsi = 100 - (100 / (1 + rs))
+            if rsi > 60: score += 10
+            elif rsi < 40: score -= 10
+
+        # 4. 成交量確認 (max ±10)
+        if len(volume) >= 20:
+            avg_vol = sum(volume[-20:]) / 20
+            vol_ratio = volume[-1] / avg_vol if avg_vol > 0 else 1
+            price_chg = (close[-1] - close[-2]) / close[-2] if len(close) >= 2 else 0
+            if vol_ratio > 1.3 and price_chg > 0.005:
+                score += 10
+            elif vol_ratio > 1.3 and price_chg < -0.005:
+                score -= 10
+
+        # 5. 股價 vs MA20 (max ±5)
+        if m20 and latest > m20 * 1.02: score += 5
+        elif m20 and latest < m20 * 0.98: score -= 5
+
+        if score >= 25: return "☀️"
+        if score <= -25: return "🌧️"
+        return "☁️"
+    except Exception:
+        return "☁️"
+
+
+@app.route("/api/weather")
+@cached(120)
+def api_weather():
+    market = request.args.get("market", "us")
+    cfg, _, _, wl_key = get_user_config(market)
+    symbols = cfg[wl_key]
+    results = {}
+    for sym in symbols:
+        results[sym] = compute_weather(sym, market)
+    return jsonify(results)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 oauth = OAuth(app)
 oauth.register(

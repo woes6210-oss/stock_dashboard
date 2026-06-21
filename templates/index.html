@@ -101,7 +101,7 @@ input::placeholder{color:#4a5568}
 <div class="left-panel">
   <table>
     <thead>
-      <tr><th>名稱</th><th>Symbol</th><th>Price</th><th>Chg%</th><th>High</th><th>Low</th><th>Vol</th><th>MktCap</th><th>Target</th><th></th></tr>
+      <tr><th style="width:30px">☁️</th><th>名稱</th><th>Symbol</th><th>Price</th><th>Chg%</th><th>High</th><th>Low</th><th>Vol</th><th>MktCap</th><th>Target</th><th></th></tr>
     </thead>
     <tbody id="tbl"></tbody>
   </table>
@@ -261,7 +261,7 @@ async function addSymbol(){
     if (!existing) {
       const tr = document.createElement("tr");
       tr.setAttribute("data-sym", sym);
-      tr.innerHTML = `<td colspan="10" style="color:#4a5568;text-align:center">Loading ${sym}...</td>`;
+      tr.innerHTML = `<td></td><td colspan="10" style="color:#4a5568;text-align:center">Loading ${sym}...</td>`;
       tbody.prepend(tr);
     }
     loadQuotes();
@@ -281,6 +281,21 @@ async function deleteSymbol(sym){
    QUOTES
 ========================= */
 
+var _weatherCache = {};
+
+async function loadWeather(){
+  try {
+    var res = await api("/api/weather?market=" + currentMarket);
+    var data = await res.json();
+    _weatherCache = data;
+    document.querySelectorAll("#tbl tr[data-sym]").forEach(function(tr){
+      var sym = tr.getAttribute("data-sym");
+      var td = tr.querySelector(".weather-td");
+      if(td && data[sym]) td.textContent = data[sym];
+    });
+  } catch(e){}
+}
+
 async function loadQuotes(){
   const res = await api("/api/quotes?market=" + currentMarket);
   const data = await res.json();
@@ -299,6 +314,7 @@ async function loadQuotes(){
     const dnColor = currentMarket === "tw" ? "green" : "red";
     const cls = q.change >= 0 ? upColor : dnColor;
     tr.innerHTML = `
+      <td class="weather-td" style="text-align:center;font-size:16px">${_weatherCache[q.symbol] || '⏳'}</td>
       <td style="font-size:11px">${currentMarket === "tw" ? (q.name || '—') : '—'}</td>
       <td>${q.symbol}</td>
       <td class="${cls}">${currentMarket === "tw" ? '' : '$'}${q.price}</td>
@@ -314,6 +330,7 @@ async function loadQuotes(){
     tbody.appendChild(tr);
   });
   document.getElementById("updatedAt").textContent = "Updated: " + (data.updated_at || "");
+  loadWeather();
 }
 
 /* =========================
