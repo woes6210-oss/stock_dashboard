@@ -147,12 +147,22 @@ input::placeholder{color:#4a5568}
 
 <script>
 
+let _clientId = localStorage.getItem("_cid");
+if(!_clientId){ _clientId = crypto.randomUUID(); localStorage.setItem("_cid", _clientId); }
+
 let chart = null;
 let selectedSymbol = null;
 let currentPeriod = "1d";
 let currentInterval = "1m";
 let timerId = null;
 let currentMarket = "us";
+
+function api(path, opts){
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers["X-Client-Id"] = _clientId;
+  return api(path, opts);
+}
 
 /* =========================
    DRAGGABLE DIVIDER
@@ -231,7 +241,7 @@ function notify(msg, type="info"){
 async function addSymbol(){
   const sym = document.getElementById("symbolInput").value.trim().toUpperCase();
   if(!sym) return;
-  await fetch("/api/watchlist/add",{
+  await api("/api/watchlist/add",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({symbol:sym, market:currentMarket})
@@ -241,7 +251,7 @@ async function addSymbol(){
 }
 
 async function deleteSymbol(sym){
-  await fetch(`/api/watchlist/${sym}?market=${currentMarket}`,{method:"DELETE"});
+  await api(`/api/watchlist/${sym}?market=${currentMarket}`,{method:"DELETE"});
   loadQuotes();
   if(selectedSymbol === sym) selectedSymbol = null;
 }
@@ -251,7 +261,7 @@ async function deleteSymbol(sym){
 ========================= */
 
 async function loadQuotes(){
-  const res = await fetch("/api/quotes?market=" + currentMarket);
+  const res = await api("/api/quotes?market=" + currentMarket);
   const data = await res.json();
   const tbody = document.getElementById("tbl");
   tbody.innerHTML = "";
@@ -291,7 +301,7 @@ async function selectSymbol(sym){
 }
 
 async function loadChart(sym, period, interval){
-  const res = await fetch(`/api/chart?symbol=${sym}&period=${period}&interval=${interval}&market=${currentMarket}`);
+  const res = await api(`/api/chart?symbol=${sym}&period=${period}&interval=${interval}&market=${currentMarket}`);
   const data = await res.json();
   if(!data.dates){
     notify("No chart data for " + sym, "warn");
@@ -435,7 +445,7 @@ function drawSparkline(cv, vals, dates, color){
 async function loadIndices(){
   try {
     const period = (document.querySelector("#idxPeriodBar .active") || {}).value || "1mo";
-    const res = await fetch("/api/indices?period=" + period + "&market=" + currentMarket);
+    const res = await api("/api/indices?period=" + period + "&market=" + currentMarket);
     const json = await res.json();
     const data = json.indices;
     const box = document.getElementById("indices");
@@ -530,7 +540,7 @@ function renderEconCal(){
 
 async function loadEconCal(){
   try {
-    var res = await fetch("/api/economic-calendar?market=" + currentMarket);
+    var res = await api("/api/economic-calendar?market=" + currentMarket);
     var data = await res.json();
     _econData = data.map(function(ev){
       return { ...ev, _rawDate: ev.days || ev.date };
@@ -549,7 +559,7 @@ setInterval(loadEconCal, 1800000);
 
 async function saveUserConfig(updates){
   try {
-    await fetch("/api/user-config?market=" + currentMarket, {
+    await api("/api/user-config?market=" + currentMarket, {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(updates)
@@ -559,7 +569,7 @@ async function saveUserConfig(updates){
 
 async function loadUserConfig(){
   try {
-    const res = await fetch("/api/user-config?market=" + currentMarket);
+    const res = await api("/api/user-config?market=" + currentMarket);
     const data = await res.json();
     const cfg = data.config || {};
     if(cfg.sidebar_width){

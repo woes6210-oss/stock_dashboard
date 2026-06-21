@@ -71,6 +71,9 @@ DEFAULT_CONFIG = {
 
 
 def get_client_ip():
+    cid = request.headers.get("X-Client-Id")
+    if cid:
+        return cid
     if request.headers.get("X-Forwarded-For"):
         return request.headers["X-Forwarded-For"].split(",")[0].strip()
     return request.remote_addr or "127.0.0.1"
