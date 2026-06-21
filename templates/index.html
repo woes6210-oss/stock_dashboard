@@ -87,6 +87,12 @@ input::placeholder{color:#4a5568}
       <option value="0">Off</option>
     </select>
     <button class="btn" style="width:auto;margin:0;padding:4px 12px" onclick="loadQuotes()">Refresh</button>
+    <div id="authSection" style="display:flex;align-items:center;gap:6px;font-size:11px">
+      <a id="loginBtn" href="/auth/login" style="color:#00d4ff;text-decoration:none">Login</a>
+      <span id="userName" style="color:#a0aec0;display:none"></span>
+      <a id="logoutBtn" href="/auth/logout" style="color:#4a5568;text-decoration:none;display:none">Logout</a>
+      <span id="userCount" style="color:#4a5568;display:none"></span>
+    </div>
   </div>
 </header>
 
@@ -655,12 +661,33 @@ const POPULAR_TW = [
    INIT
 ========================= */
 
+async function checkAuth(){
+  try {
+    var res = await api("/api/me");
+    var d = await res.json();
+    if(d.logged_in){
+      document.getElementById("loginBtn").style.display = "none";
+      document.getElementById("userName").style.display = "inline";
+      document.getElementById("userName").textContent = d.name || d.email;
+      document.getElementById("logoutBtn").style.display = "inline";
+    }
+    var ures = await api("/api/admin/users");
+    var ud = await ures.json();
+    if(ud.logged_in_users > 0){
+      var uc = document.getElementById("userCount");
+      uc.style.display = "inline";
+      uc.textContent = "👤 " + ud.logged_in_users;
+    }
+  } catch(e){}
+}
+
 (async function(){
   await loadUserConfig();
   loadQuotes();
   loadIndices();
   loadEconCal();
   changeInterval();
+  checkAuth();
 })();
 
 setInterval(loadIndices, 60000);

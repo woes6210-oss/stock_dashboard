@@ -10,7 +10,8 @@ from pathlib import Path
 
 from functools import wraps
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from authlib.integrations.flask_client import OAuth
 
 try:
     import yfinance as yf
@@ -19,6 +20,15 @@ except ImportError:
     raise
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
+oauth = OAuth(app)
+oauth.register(
+    name="google",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+    client_kwargs={"scope": "openid email profile"},
+)
 
 # simple in-memory cache keyed by request path + query
 _cache = {}
@@ -71,6 +81,9 @@ DEFAULT_CONFIG = {
 
 
 def get_client_ip():
+    google_sub = session.get("user_sub")
+    if google_sub:
+        return "google_" + google_sub
     cid = request.headers.get("X-Client-Id")
     if cid:
         return cid
@@ -155,6 +168,45 @@ def fmt_volume(v):
     if v >= 1e3:
         return f"{v/1e3:.1f}K"
     return str(int(v))
+
+
+# ── Auth Routes ─────────────────────────────────────────
+
+@app.route("/auth/login")
+def auth_login():
+    redirect_uri = url_for("auth_callback", _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+@app.route("/auth/callback")
+def auth_callback():
+    token = oauth.google.authorize_access_token()
+    user = token.get("userinfo") or oauth.google.parse_id_token(token)
+    session["user_sub"] = user["sub"]
+    session["user_name"] = user.get("name", "")
+    session["user_email"] = user.get("email", "")
+    return redirect(url_for("index"))
+
+@app.route("/auth/logout")
+def auth_logout():
+    session.clear()
+    return redirect(url_for("index"))
+
+@app.route("/api/me")
+def api_me():
+    return jsonify({
+        "logged_in": "user_sub" in session,
+        "name": session.get("user_name", ""),
+        "email": session.get("user_email", ""),
+    })
+
+@app.route("/api/admin/users")
+def api_admin_users():
+    configs = load_all_configs()
+    logged_in = [k for k in configs if k.startswith("google_")]
+    return jsonify({
+        "total_configs": len(configs),
+        "logged_in_users": len(logged_in),
+    })
 
 
 # ── Routes ──────────────────────────────────────────────
