@@ -161,7 +161,7 @@ function api(path, opts){
   opts = opts || {};
   opts.headers = opts.headers || {};
   opts.headers["X-Client-Id"] = _clientId;
-  return api(path, opts);
+  return fetch(path, opts);
 }
 
 /* =========================
@@ -251,8 +251,9 @@ async function addSymbol(){
 }
 
 async function deleteSymbol(sym){
-  await api(`/api/watchlist/${sym}?market=${currentMarket}`,{method:"DELETE"});
-  loadQuotes();
+  try { await api(`/api/watchlist/${sym}?market=${currentMarket}`,{method:"DELETE"}); } catch(e){}
+  var row = document.querySelector(`#tbl tr[data-sym="${sym}"]`);
+  if(row) row.remove();
   if(selectedSymbol === sym) selectedSymbol = null;
 }
 
@@ -268,10 +269,12 @@ async function loadQuotes(){
   data.quotes.forEach(q => {
     const tr = document.createElement("tr");
     if(!q.ok){
-      tr.innerHTML = `<td>—</td><td>${q.symbol}</td><td colspan="8" style="color:#ff1744">${q.error}</td>`;
+      tr.setAttribute("data-sym", q.symbol);
+    tr.innerHTML = `<td>—</td><td>${q.symbol}</td><td colspan="8" style="color:#ff1744">${q.error}</td>`;
       tbody.appendChild(tr);
       return;
     }
+    tr.setAttribute("data-sym", q.symbol);
     const cls = q.change >= 0 ? "green" : "red";
     tr.innerHTML = `
       <td style="font-size:11px">${currentMarket === "tw" ? (q.name || '—') : '—'}</td>
