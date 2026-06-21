@@ -126,16 +126,119 @@ def compute_weather(symbol, market="us"):
         return "☁️"
 
 
+def compute_weather_detail(symbol, market="us"):
+    """Returns weather + score breakdown for radar chart."""
+    try:
+        yf_sym = symbol + ".TW" if market == "tw" else symbol
+        ticker = yf.Ticker(yf_sym)
+        hist = ticker.history(period="2mo", interval="1d")
+        if hist.empty or len(hist) < 15:
+            return {"weather": "☁️", "score": 0, "details": {}}
+
+        close = hist["Close"].tolist()
+        volume = hist["Volume"].tolist()
+        latest = close[-1]
+        m5 = _sma(close, 5)
+        m10 = _sma(close, 10)
+        m20 = _sma(close, 20)
+
+        details = {}
+        total = 0
+
+        # 1. MA alignment (max 20)
+        ma_score = 0
+        if m5 and m10 and m20:
+            if m5 > m10 > m20 and latest > m20: ma_score = 20
+            elif m5 < m10 < m20 and latest < m20: ma_score = -20
+        details["ma_alignment"] = {"raw": ma_score, "max": 20, "label": "均線"}
+        total += ma_score
+
+        # 2. MACD (max 15)
+        macd_score = 0
+        if len(close) >= 26:
+            e12 = _ema(close, 12)[-1]; e26 = _ema(close, 26)[-1]
+            macd_line = e12 - e26
+            macd_hist = [a - b for a, b in zip(_ema(close, 12), _ema(close, 26))]
+            sig = _ema(macd_hist, 9)[-1] if len(macd_hist) >= 9 else 0
+            if macd_line > sig: macd_score = 15
+            else: macd_score = -15
+        details["macd"] = {"raw": macd_score, "max": 15, "label": "MACD"}
+        total += macd_score
+
+        # 3. RSI (max 10)
+        rsi_score = 0
+        if len(close) >= 15:
+            gains = [close[i]-close[i-1] for i in range(1,len(close)) if close[i]>close[i-1]]
+            losses = [close[i-1]-close[i] for i in range(1,len(close)) if close[i]<close[i-1]]
+            ag = sum(gains[-14:])/14 if len(gains)>=14 else (sum(gains)/max(len(gains),1) or 0.001)
+            al = sum(losses[-14:])/14 if len(losses)>=14 else (sum(losses)/max(len(losses),1) or 0.001)
+            rs = ag/al if al>0 else 100
+            rsi = 100 - 100/(1+rs)
+            if rsi > 60: rsi_score = 10
+            elif rsi < 40: rsi_score = -10
+        details["rsi"] = {"raw": rsi_score, "max": 10, "label": "RSI"}
+        total += rsi_score
+
+        # 4. Volume (max 10)
+        vol_score = 0
+        if len(volume) >= 20:
+            avg_vol = sum(volume[-20:])/20
+            vr = volume[-1]/avg_vol if avg_vol>0 else 1
+            pc = (close[-1]-close[-2])/close[-2] if len(close)>=2 else 0
+            if vr > 1.3 and pc > 0.005: vol_score = 10
+            elif vr > 1.3 and pc < -0.005: vol_score = -10
+        details["volume"] = {"raw": vol_score, "max": 10, "label": "成交量"}
+        total += vol_score
+
+        # 5. Price vs MA20 (max 5)
+        pv_score = 0
+        if m20 and latest > m20*1.02: pv_score = 5
+        elif m20 and latest < m20*0.98: pv_score = -5
+        details["price_position"] = {"raw": pv_score, "max": 5, "label": "股價位置"}
+        total += pv_score
+
+        if total >= 25: weather = "☀️"
+        elif total <= -25: weather = "🌧️"
+        else: weather = "☁️"
+
+        return {"weather": weather, "score": total, "details": details}
+    except Exception:
+        return {"weather": "☁️", "score": 0, "details": {}}
+
+
 @app.route("/api/weather")
 @cached(120)
 def api_weather():
     market = request.args.get("market", "us")
+    detail = request.args.get("detail", "0") == "1"
     cfg, _, _, wl_key = get_user_config(market)
     symbols = cfg[wl_key]
     results = {}
     for sym in symbols:
-        results[sym] = compute_weather(sym, market)
+        if detail:
+            results[sym] = compute_weather_detail(sym, market)
+        else:
+            results[sym] = compute_weather(sym, market)
     return jsonify(results)
+
+
+@app.route("/api/stock-fundamentals")
+@cached(300)
+def api_stock_fundamentals():
+    symbol = request.args.get("symbol", "").upper()
+    market = request.args.get("market", "us")
+    if not symbol:
+        return jsonify({"error": "no symbol"}), 400
+    try:
+        yf_sym = symbol + ".TW" if market == "tw" else symbol
+        info = yf.Ticker(yf_sym).info
+        return jsonify({
+            "pe": info.get("trailingPE") or info.get("forwardPE"),
+            "eps": info.get("trailingEps") or info.get("epsTrailingTwelveMonths"),
+            "industry": info.get("industry") or info.get("sector", "Unknown"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 oauth = OAuth(app)
 oauth.register(

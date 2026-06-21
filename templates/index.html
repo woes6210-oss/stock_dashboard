@@ -64,6 +64,15 @@ input::placeholder{color:#4a5568}
 .imp-med{background:#ffa000}
 .imp-low{background:#555}
 .e-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.indices-bar{display:flex;gap:8px;padding:6px 14px;border-bottom:1px solid #1c2a3a;flex-wrap:wrap;font-size:11px}
+.indices-bar .idx-item{display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;background:#111a24}
+.indices-bar .idx-item .idx-label{color:#a0aec0}
+.indices-bar .idx-item .idx-val{font-weight:bold;font-size:12px}
+.indices-bar .idx-item .idx-chg{font-size:10px}
+.chart-sm{height:140px;margin-bottom:6px}
+.radar-row{display:flex;gap:6px;margin-bottom:8px}
+.radar-row canvas{flex:1;height:120px!important;width:50%!important}
+.bar-chart-sm{height:120px;margin-bottom:8px}
 .notif{position:fixed;top:60px;right:16px;z-index:999;display:flex;flex-direction:column;gap:8px}
 .notif-item{padding:10px 14px;border-radius:4px;font-size:13px;animation:fadeIn .3s;max-width:320px}
 .notif-item.info{background:#1a3a5c;border:1px solid #00d4ff}
@@ -95,6 +104,8 @@ input::placeholder{color:#4a5568}
     </div>
   </div>
 </header>
+
+<div class="indices-bar" id="indicesBar"></div>
 
 <div class="container">
 
@@ -129,14 +140,17 @@ input::placeholder{color:#4a5568}
 
   <hr>
 
-  <div style="font-size:13px;margin-bottom:4px">📊 Indices</div>
-  <div id="idxPeriodBar" class="period-bar" style="margin-bottom:4px">
-    <button value="1d">1D</button>
-    <button value="5d">5D</button>
-    <button value="1mo" class="active">1M</button>
-    <button value="3mo">3M</button>
+  <div id="analysisSection" style="display:none">
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+      <span id="indivRadarTitle">個股雷達圖</span>
+      <span id="indusRadarTitle">同業平均</span>
+    </div>
+    <div class="radar-row">
+      <canvas id="radarChart"></canvas>
+      <canvas id="industryRadar"></canvas>
+    </div>
+    <div class="bar-chart-sm"><canvas id="fundamentalsChart"></canvas></div>
   </div>
-  <div id="indices" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px"></div>
 
   <hr>
 
@@ -301,6 +315,7 @@ async function loadQuotes(){
   const data = await res.json();
   const tbody = document.getElementById("tbl");
   tbody.innerHTML = "";
+  var firstSym = null;
   data.quotes.forEach(q => {
     const tr = document.createElement("tr");
     if(!q.ok){
@@ -310,6 +325,7 @@ async function loadQuotes(){
       return;
     }
     tr.setAttribute("data-sym", q.symbol);
+    if(firstSym === null) firstSym = q.symbol;
     const upColor = currentMarket === "tw" ? "red" : "green";
     const dnColor = currentMarket === "tw" ? "green" : "red";
     const cls = q.change >= 0 ? upColor : dnColor;
@@ -331,6 +347,7 @@ async function loadQuotes(){
   });
   document.getElementById("updatedAt").textContent = "Updated: " + (data.updated_at || "");
   loadWeather();
+  if(firstSym && !selectedSymbol) selectSymbol(firstSym);
 }
 
 /* =========================
@@ -340,6 +357,7 @@ async function loadQuotes(){
 async function selectSymbol(sym){
   selectedSymbol = sym;
   loadChart(sym, currentPeriod, currentInterval);
+  loadAnalysis(sym);
 }
 
 async function loadChart(sym, period, interval){
@@ -486,44 +504,133 @@ function drawSparkline(cv, vals, dates, color){
 
 async function loadIndices(){
   try {
-    const period = (document.querySelector("#idxPeriodBar .active") || {}).value || "1mo";
-    const res = await api("/api/indices?period=" + period + "&market=" + currentMarket);
+    const res = await api("/api/indices?period=1d&market=" + currentMarket);
     const json = await res.json();
     const data = json.indices;
-    const box = document.getElementById("indices");
-    box.innerHTML = "";
-    document.querySelectorAll("#idxPeriodBar button").forEach(function(b){
-      b.classList.toggle("active", b.value === json.period);
-    });
+    const bar = document.getElementById("indicesBar");
+    bar.innerHTML = "";
     data.forEach(function(idx){
-      var card = document.createElement("div");
-      card.className = "index-card";
-      card.style.cursor = "pointer";
-      var upColor2 = currentMarket === "tw" ? "red" : "green";
-      var dnColor2 = currentMarket === "tw" ? "green" : "red";
-      var cls = idx.change_pct >= 0 ? upColor2 : dnColor2;
-      card.innerHTML = `
-        <div class="label">${idx.label}</div>
-        <div class="price ${cls}">${idx.last.toLocaleString()}</div>
-        <div class="chg ${cls}">${idx.change_pct >= 0 ? "+" : ""}${idx.change_pct}%</div>
-        <canvas style="width:100%;height:38px"></canvas>
+      var span = document.createElement("span");
+      span.className = "idx-item";
+      var upC = currentMarket === "tw" ? "red" : "green";
+      var dnC = currentMarket === "tw" ? "green" : "red";
+      var cl = idx.change_pct >= 0 ? upC : dnC;
+      var arr = idx.change_pct >= 0 ? "▲" : "▼";
+      span.innerHTML = `
+        <span class="idx-label">${idx.label}</span>
+        <span class="idx-val ${cl}">${idx.last.toLocaleString()}</span>
+        <span class="idx-chg ${cl}">${arr}${Math.abs(idx.change_pct).toFixed(1)}%</span>
       `;
-      card.onclick = function(){ selectSymbol(idx.symbol); };
-      box.appendChild(card);
-      var cv = card.querySelector("canvas");
-      var color = idx.change_pct >= 0 ? (currentMarket === "tw" ? "#ff1744" : "#00c853") : (currentMarket === "tw" ? "#00c853" : "#ff1744");
-      requestAnimationFrame(function(){ drawSparkline(cv, idx.closes, idx.dates, color); });
+      bar.appendChild(span);
     });
-    clearTimeout(window._indicesResize);
-    window._indicesResize = setTimeout(function(){
-      document.querySelectorAll("#indices canvas").forEach(function(cv, i){
-        if(data[i]){
-          var upCol = currentMarket === "tw" ? "#ff1744" : "#00c853";
-          var dnCol = currentMarket === "tw" ? "#00c853" : "#ff1744";
-          drawSparkline(cv, data[i].closes, data[i].dates, data[i].change_pct >= 0 ? upCol : dnCol);
-        }
+  } catch(e){}
+}
+
+/* =========================
+   STOCK ANALYSIS (RADAR + BAR)
+========================= */
+
+var _radarChart = null;
+var _industryRadarChart = null;
+var _fundamentalsChart = null;
+
+function renderRadar(canvasId, data, label, color){
+  var canvas = document.getElementById(canvasId);
+  if(!canvas) return null;
+  if(canvas._chart) canvas._chart.destroy();
+  var labels = [];
+  var values = [];
+  var maxVals = [];
+  if(!data || Object.keys(data).length === 0) return null;
+  Object.keys(data).forEach(function(k){
+    labels.push(data[k].label);
+    values.push(Math.max(0, (data[k].raw / data[k].max) * 100));
+    maxVals.push(100);
+  });
+  canvas._chart = new Chart(canvas, {
+    type:"radar",
+    data:{
+      labels:labels,
+      datasets:[{label:label, data:values, backgroundColor:color+"33", borderColor:color, pointBackgroundColor:color, borderWidth:1}]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        r:{min:0, max:100, ticks:{display:false, stepSize:25}, grid:{color:"#2a3a4a"}, angleLines:{color:"#2a3a4a"}, pointLabels:{color:"#a0aec0", font:{size:9}}}
+      }
+    }
+  });
+  return canvas._chart;
+}
+
+function renderBarChart(pe, avgPe, eps, avgEps){
+  var canvas = document.getElementById("fundamentalsChart");
+  if(!canvas) return;
+  if(canvas._chart) canvas._chart.destroy();
+  var peOk = pe != null && pe !== undefined && pe !== 0;
+  var epsOk = eps != null && eps !== undefined && eps !== 0;
+  canvas._chart = new Chart(canvas, {
+    type:"bar",
+    data:{
+      labels:["本益比 (P/E)", "每股盈餘 (EPS)"],
+      datasets:[
+        {label:"個股", data:[peOk ? pe : null, epsOk ? eps : null], backgroundColor:"#00d4ff88", borderColor:"#00d4ff", borderWidth:1},
+        {label:"同業平均", data:[avgPe != null ? avgPe : null, avgEps != null ? avgEps : null], backgroundColor:"#ff980088", borderColor:"#ff9800", borderWidth:1}
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{position:"top", labels:{color:"#a0aec0", boxWidth:10, font:{size:10}}}
+      },
+      scales:{
+        x:{ticks:{color:"#a0aec0", font:{size:9}}},
+        y:{ticks:{color:"#a0aec0", font:{size:9}}, grid:{color:"#2a3a4a"}}
+      }
+    }
+  });
+}
+
+async function loadAnalysis(sym){
+  if(!sym){ document.getElementById("analysisSection").style.display = "none"; return; }
+  document.getElementById("analysisSection").style.display = "block";
+  try {
+    var res = await api("/api/weather?detail=1&market=" + currentMarket);
+    var allData = await res.json();
+    var stockData = allData[sym];
+    if(!stockData || !stockData.details){
+      document.getElementById("analysisSection").style.display = "none";
+      return;
+    }
+    _radarChart = renderRadar("radarChart", stockData.details, sym, "#00d4ff");
+
+    // Compute industry average from other watchlist stocks
+    var avgDetails = {};
+    var count = 0;
+    Object.keys(allData).forEach(function(s){
+      if(s === sym || !allData[s].details) return;
+      count++;
+      Object.keys(allData[s].details).forEach(function(k){
+        if(!avgDetails[k]) avgDetails[k] = {raw:0, max:allData[s].details[k].max, label:allData[s].details[k].label};
+        avgDetails[k].raw += allData[s].details[k].raw;
       });
-    }, 300);
+    });
+    if(count > 0){
+      Object.keys(avgDetails).forEach(function(k){ avgDetails[k].raw = avgDetails[k].raw / count; });
+      _industryRadarChart = renderRadar("industryRadar", avgDetails, "同業平均", "#ff9800");
+    } else {
+      _industryRadarChart = renderRadar("industryRadar", null, "", "#ff9800");
+    }
+  } catch(e){
+    document.getElementById("analysisSection").style.display = "none";
+  }
+
+  // Fetch fundamentals
+  try {
+    var fres = await api("/api/stock-fundamentals?symbol=" + sym + "&market=" + currentMarket);
+    var fdata = await fres.json();
+    renderBarChart(fdata.pe, null, fdata.eps, null);
   } catch(e){}
 }
 
@@ -790,17 +897,6 @@ async function checkAuth(retries){
 })();
 
 setInterval(loadIndices, 60000);
-window.addEventListener("resize", function(){
-  clearTimeout(window._indicesResize);
-  window._indicesResize = setTimeout(loadIndices, 400);
-});
-document.getElementById("idxPeriodBar").addEventListener("click", function(e){
-  var b = e.target.closest("button");
-  if(!b) return;
-  document.querySelectorAll("#idxPeriodBar button").forEach(function(x){ x.classList.remove("active"); });
-  b.classList.add("active");
-  loadIndices();
-});
 document.getElementById("marketTabs").addEventListener("click", function(e){
   var b = e.target.closest("button");
   if(!b || b.classList.contains("active")) return;
@@ -808,6 +904,10 @@ document.getElementById("marketTabs").addEventListener("click", function(e){
   b.classList.add("active");
   currentMarket = b.getAttribute("data-market");
   if(chart){ chart.destroy(); chart = null; }
+  document.getElementById("analysisSection").style.display = "none";
+  [].forEach.call(document.querySelectorAll("#radarChart, #industryRadar, #fundamentalsChart"), function(c){
+    if(c._chart){ c._chart.destroy(); c._chart = null; }
+  });
   document.getElementById("chartTitle").textContent = "";
   selectedSymbol = null;
   var inp = document.getElementById("symbolInput");
