@@ -91,7 +91,7 @@ TW_NAMES = {
 DEFAULT_CONFIG = {
     "watchlist_us": DEFAULT_SYMBOLS,
     "watchlist_tw": TW_DEFAULT_SYMBOLS,
-    "sidebar_width": 340,
+    "sidebar_width": 480,
     "refresh_interval": 30000,
     "chart_period": "1d",
     "chart_interval": "1m",

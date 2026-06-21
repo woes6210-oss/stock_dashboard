@@ -106,7 +106,7 @@ input::placeholder{color:#4a5568}
     <tbody id="tbl"></tbody>
   </table>
   <div class="add-row">
-    <input id="symbolInput" placeholder="Add symbol (e.g. AAPL)">
+    <input id="symbolInput" placeholder="Add symbol (e.g. AAPL)" data-placeholder-us="Add symbol (e.g. AAPL)" data-placeholder-tw="輸入股票代號 (e.g. 2330)">
     <button onclick="addSymbol()">+ Add</button>
     <div class="suggest" id="suggest"></div>
   </div>
@@ -247,13 +247,27 @@ function notify(msg, type="info"){
 async function addSymbol(){
   const sym = document.getElementById("symbolInput").value.trim().toUpperCase();
   if(!sym) return;
-  await api("/api/watchlist/add",{
+  const input = document.getElementById("symbolInput");
+  input.disabled = true;
+  api("/api/watchlist/add",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({symbol:sym, market:currentMarket})
+  }).then(() => {
+    input.value = "";
+    input.disabled = false;
+    const tbody = document.getElementById("tbl");
+    const existing = tbody.querySelector(`tr[data-sym="${CSS.escape(sym)}"]`);
+    if (!existing) {
+      const tr = document.createElement("tr");
+      tr.setAttribute("data-sym", sym);
+      tr.innerHTML = `<td colspan="10" style="color:#4a5568;text-align:center">Loading ${sym}...</td>`;
+      tbody.prepend(tr);
+    }
+    loadQuotes();
+  }).catch(() => {
+    input.disabled = false;
   });
-  document.getElementById("symbolInput").value = "";
-  loadQuotes();
 }
 
 async function deleteSymbol(sym){
@@ -281,7 +295,9 @@ async function loadQuotes(){
       return;
     }
     tr.setAttribute("data-sym", q.symbol);
-    const cls = q.change >= 0 ? "green" : "red";
+    const upColor = currentMarket === "tw" ? "red" : "green";
+    const dnColor = currentMarket === "tw" ? "green" : "red";
+    const cls = q.change >= 0 ? upColor : dnColor;
     tr.innerHTML = `
       <td style="font-size:11px">${currentMarket === "tw" ? (q.name || '—') : '—'}</td>
       <td>${q.symbol}</td>
@@ -466,7 +482,9 @@ async function loadIndices(){
       var card = document.createElement("div");
       card.className = "index-card";
       card.style.cursor = "pointer";
-      var cls = idx.change_pct >= 0 ? "green" : "red";
+      var upColor2 = currentMarket === "tw" ? "red" : "green";
+      var dnColor2 = currentMarket === "tw" ? "green" : "red";
+      var cls = idx.change_pct >= 0 ? upColor2 : dnColor2;
       card.innerHTML = `
         <div class="label">${idx.label}</div>
         <div class="price ${cls}">${idx.last.toLocaleString()}</div>
@@ -476,13 +494,17 @@ async function loadIndices(){
       card.onclick = function(){ selectSymbol(idx.symbol); };
       box.appendChild(card);
       var cv = card.querySelector("canvas");
-      var color = idx.change_pct >= 0 ? "#00c853" : "#ff1744";
+      var color = idx.change_pct >= 0 ? (currentMarket === "tw" ? "#ff1744" : "#00c853") : (currentMarket === "tw" ? "#00c853" : "#ff1744");
       requestAnimationFrame(function(){ drawSparkline(cv, idx.closes, idx.dates, color); });
     });
     clearTimeout(window._indicesResize);
     window._indicesResize = setTimeout(function(){
       document.querySelectorAll("#indices canvas").forEach(function(cv, i){
-        if(data[i]) drawSparkline(cv, data[i].closes, data[i].dates, data[i].change_pct >= 0 ? "#00c853" : "#ff1744");
+        if(data[i]){
+          var upCol = currentMarket === "tw" ? "#ff1744" : "#00c853";
+          var dnCol = currentMarket === "tw" ? "#00c853" : "#ff1744";
+          drawSparkline(cv, data[i].closes, data[i].dates, data[i].change_pct >= 0 ? upCol : dnCol);
+        }
       });
     }, 300);
   } catch(e){}
@@ -583,6 +605,9 @@ async function loadUserConfig(){
     const cfg = data.config || {};
     if(cfg.sidebar_width){
       document.getElementById("sidebar").style.width = cfg.sidebar_width + "px";
+    } else {
+      var w = Math.round(window.innerWidth * 0.65);
+      document.getElementById("sidebar").style.width = Math.max(300, Math.min(w, window.innerWidth * 0.8)) + "px";
     }
     if(cfg.refresh_interval != null){
       document.getElementById("intervalSelect").value = cfg.refresh_interval;
@@ -715,7 +740,8 @@ if (autoMarket !== 'us') {
    INIT
 ========================= */
 
-async function checkAuth(){
+async function checkAuth(retries){
+  retries = retries || 0;
   try {
     var res = await api("/api/me");
     var d = await res.json();
@@ -732,7 +758,9 @@ async function checkAuth(){
       uc.style.display = "inline";
       uc.textContent = "👤 " + ud.logged_in_users;
     }
-  } catch(e){}
+  } catch(e){
+    if(retries < 3) setTimeout(function(){ checkAuth(retries + 1); }, 1000);
+  }
 }
 
 (async function(){
@@ -765,6 +793,8 @@ document.getElementById("marketTabs").addEventListener("click", function(e){
   if(chart){ chart.destroy(); chart = null; }
   document.getElementById("chartTitle").textContent = "";
   selectedSymbol = null;
+  var inp = document.getElementById("symbolInput");
+  inp.placeholder = inp.getAttribute("data-placeholder-" + currentMarket) || inp.placeholder;
   var legend = document.getElementById("chartLegend");
   if(currentMarket === "tw"){
     legend.style.display = "flex";
