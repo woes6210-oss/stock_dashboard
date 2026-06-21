@@ -8,6 +8,8 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from functools import wraps
+
 from flask import Flask, jsonify, render_template, request
 
 try:
@@ -17,6 +19,22 @@ except ImportError:
     raise
 
 app = Flask(__name__)
+
+# simple in-memory cache keyed by request path + query
+_cache = {}
+def cached(ttl_sec):
+    def deco(f):
+        @wraps(f)
+        def wrapper(*a, **kw):
+            key = request.path + "?" + request.query_string.decode("utf-8") if request.query_string else request.path
+            now = datetime.now()
+            if key in _cache and (now - _cache[key]["ts"]).total_seconds() < ttl_sec:
+                return _cache[key]["data"]
+            data = f(*a, **kw)
+            _cache[key] = {"data": data, "ts": now}
+            return data
+        return wrapper
+    return deco
 
 ALERTS_FILE = "alerts.json"
 CONFIG_FILE = "user_configs.json"
@@ -243,6 +261,7 @@ def _fetch_quotes(symbols, market="us"):
     return results
 
 @app.route("/api/quotes")
+@cached(15)
 def api_quotes():
     market = request.args.get("market", "us")
     cfg, _, _, wl_key = get_user_config(market)
@@ -260,6 +279,7 @@ def api_quotes():
 # ── Chart ───────────────────────────────────────────────
 
 @app.route("/api/chart")
+@cached(30)
 def api_chart():
     symbol = request.args.get("symbol", "AAPL").upper()
     market = request.args.get("market", "us")
@@ -366,6 +386,7 @@ TW_INDICES = [
 INDICES_PERIOD_MAP = {"1d": ("1d", "5m"), "5d": ("5d", "5m"), "1mo": ("1mo", "1d"), "3mo": ("3mo", "1d")}
 
 @app.route("/api/indices")
+@cached(60)
 def api_indices():
     market = request.args.get("market", "us")
     period = request.args.get("period", "1mo")
